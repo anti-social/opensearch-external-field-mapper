@@ -16,8 +16,8 @@
 
 package company.evo.opensearch.indices
 
-import company.evo.rc.RefCounted
-import company.evo.rc.AtomicRefCounted
+import dev.evo.rc.RefCounted
+import dev.evo.rc.AtomicRefCounted
 
 import org.apache.logging.log4j.LogManager
 

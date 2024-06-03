@@ -14,16 +14,16 @@
 * limitations under the License.
 */
 
-package company.evo.elasticsearch.indices
+package company.evo.opensearch.indices
 
 import company.evo.rc.RefCounted
 import company.evo.rc.AtomicRefCounted
 
 import org.apache.logging.log4j.LogManager
 
-import org.elasticsearch.common.component.AbstractLifecycleComponent
-import org.elasticsearch.env.Environment
-import org.elasticsearch.env.NodeEnvironment
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
+import org.opensearch.env.Environment
+import org.opensearch.env.NodeEnvironment
 
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap

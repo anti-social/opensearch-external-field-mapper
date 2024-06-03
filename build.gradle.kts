@@ -1,29 +1,29 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.nio.file.Paths
 
 buildscript {
-    // val defaultEsVersion = "6.8.12"
-    val defaultEsVersion = "7.9.3"
-    val esVersion = if (hasProperty("esVersion")) {
-        property("esVersion")
+    val defaultOpensearchVersion = "2.14.0"
+    val opensearchVersion = if (hasProperty("opensearchVersion")) {
+        property("opensearchVersion")
     } else {
-        defaultEsVersion
+        defaultOpensearchVersion
     }
 
     dependencies {
-        classpath("org.elasticsearch.gradle:build-tools:$esVersion")
+        classpath("org.opensearch.gradle:build-tools:$opensearchVersion")
     }
 }
 
 plugins {
     idea
     java
-    kotlin("jvm") version "1.3.50"
+    kotlin("jvm") version "1.9.24"
     id("org.ajoberstar.grgit") version "3.1.1"
-    id("nebula.ospackage") version "8.5.6"
+    id("com.netflix.nebula.ospackage") version "11.9.0"
 }
 
 apply {
-    plugin("elasticsearch.esplugin")
+    plugin("opensearch.opensearchplugin")
 }
 
 subprojects {
@@ -34,10 +34,10 @@ subprojects {
 
 val pluginName = "mapper-external-file"
 
-configure<org.elasticsearch.gradle.plugin.PluginPropertiesExtension> {
+configure<org.opensearch.gradle.plugin.PluginPropertiesExtension> {
     name = pluginName
-    description = "External file field mapper for ElasticSearch"
-    classname = "company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin"
+    description = "External file field mapper for OpenSearch"
+    classname = "company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin"
     licenseFile = rootProject.file("LICENSE.txt")
     noticeFile = rootProject.file("NOTICE.txt")
 }
@@ -45,7 +45,7 @@ configure<org.elasticsearch.gradle.plugin.PluginPropertiesExtension> {
 val grgit: org.ajoberstar.grgit.Grgit? by extra
 val tag = grgit?.describe(mapOf("tags" to true, "match" to listOf("v*"))) ?: "v0.0.0"
 version = tag.trimStart('v')
-val esVersions = org.elasticsearch.gradle.VersionProperties.getVersions() as Map<String, String>
+val opensearchVersions = org.opensearch.gradle.VersionProperties.getVersions() as Map<String, String>
 
 val distDir = Paths.get(buildDir.path, "distributions")
 
@@ -54,16 +54,22 @@ repositories {
 }
 
 dependencies {
-    compile(kotlin("stdlib-jdk8"))
-    compile("company.evo:persistent-hashmap")
-    compile("commons-logging", "commons-logging", esVersions["commonslogging"])
+    implementation("dev.evo.persistent:persistent-hashmap")
+    implementation("commons-logging", "commons-logging", opensearchVersions["commonslogging"])
 }
 
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).all {
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
-    }
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
 }
+tasks.withType<KotlinCompile> {
+    kotlinOptions.jvmTarget = JavaVersion.VERSION_11.toString()
+}
+// tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>.all {
+//     kotlinOptions {
+//         jvmTarget = JavaVersion.VERSION_1_8.toString()
+//     }
+// }
 
 tasks.register("listRepos") {
     doLast {
@@ -87,13 +93,13 @@ tasks.named("assemble") {
 tasks.register("deb", com.netflix.gradle.plugins.deb.Deb::class) {
     dependsOn("bundlePlugin")
 
-    packageName = "elasticsearch-${pluginName}-plugin"
-    requires("elasticsearch", esVersions["elasticsearch"])
-        .or("elasticsearch-oss", esVersions["elasticsearch"])
+    packageName = "opensearch-${pluginName}-plugin"
+    requires("opensearch", opensearchVersions["opensearch"])
+        .or("opensearch-oss", opensearchVersions["opensearch"])
 
     from(zipTree(tasks["bundlePlugin"].outputs.files.singleFile))
 
-    val esHome = project.properties["esHome"] ?: "/usr/share/elasticsearch"
+    val esHome = project.properties["esHome"] ?: "/usr/share/opensearchsearch"
     into("$esHome/plugins/${pluginName}")
 
     doLast {

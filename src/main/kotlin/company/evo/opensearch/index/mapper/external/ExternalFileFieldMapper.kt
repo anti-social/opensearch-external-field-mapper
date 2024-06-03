@@ -14,34 +14,35 @@
 * limitations under the License.
 */
 
-package company.evo.elasticsearch.index.mapper.external
+package company.evo.opensearch.index.mapper.external
 
-import company.evo.elasticsearch.indices.*
+import company.evo.opensearch.indices.*
 
 import org.apache.lucene.index.LeafReaderContext
 import org.apache.lucene.index.SortedNumericDocValues
 import org.apache.lucene.search.Query
 
-import org.elasticsearch.index.Index
-import org.elasticsearch.index.fielddata.FieldData
-import org.elasticsearch.index.fielddata.IndexFieldData
-import org.elasticsearch.index.fielddata.IndexNumericFieldData
-import org.elasticsearch.index.fielddata.LeafNumericFieldData
-import org.elasticsearch.index.fielddata.ScriptDocValues
-import org.elasticsearch.index.fielddata.SortedBinaryDocValues
-import org.elasticsearch.index.fielddata.SortedNumericDoubleValues
-import org.elasticsearch.index.IndexSettings
-import org.elasticsearch.index.mapper.FieldMapper
-import org.elasticsearch.index.mapper.MappedFieldType
-import org.elasticsearch.index.mapper.Mapper
-import org.elasticsearch.index.mapper.ParametrizedFieldMapper
-import org.elasticsearch.index.mapper.ParseContext
-import org.elasticsearch.index.mapper.TextSearchInfo
-import org.elasticsearch.index.query.QueryShardContext
-import org.elasticsearch.index.query.QueryShardException
-import org.elasticsearch.search.aggregations.support.CoreValuesSourceType
-import org.elasticsearch.search.aggregations.support.ValuesSourceType
-import org.elasticsearch.search.lookup.SearchLookup
+import org.opensearch.core.index.Index
+import org.opensearch.index.fielddata.FieldData
+import org.opensearch.index.fielddata.IndexFieldData
+import org.opensearch.index.fielddata.IndexNumericFieldData
+import org.opensearch.index.fielddata.LeafNumericFieldData
+import org.opensearch.index.fielddata.ScriptDocValues
+import org.opensearch.index.fielddata.SortedBinaryDocValues
+import org.opensearch.index.fielddata.SortedNumericDoubleValues
+import org.opensearch.index.IndexSettings
+import org.opensearch.index.mapper.FieldMapper
+import org.opensearch.index.mapper.MappedFieldType
+import org.opensearch.index.mapper.Mapper
+import org.opensearch.index.mapper.ParametrizedFieldMapper
+import org.opensearch.index.mapper.ParseContext
+import org.opensearch.index.mapper.TextSearchInfo
+import org.opensearch.index.mapper.ValueFetcher
+import org.opensearch.index.query.QueryShardContext
+import org.opensearch.index.query.QueryShardException
+import org.opensearch.search.aggregations.support.CoreValuesSourceType
+import org.opensearch.search.aggregations.support.ValuesSourceType
+import org.opensearch.search.lookup.SearchLookup
 
 import java.util.function.Supplier
 
@@ -160,7 +161,7 @@ class ExternalFileFieldMapper private constructor(
         private val mapName: String,
         private val keyFieldName: String,
         private val sharding: Boolean
-    ) : MappedFieldType(name, false, false, TextSearchInfo.NONE, emptyMap()) {
+    ) : MappedFieldType(name, false, false, true, TextSearchInfo.NONE, emptyMap()) {
 
         override fun typeName(): String {
             return CONTENT_TYPE
@@ -168,15 +169,27 @@ class ExternalFileFieldMapper private constructor(
 
         override fun termQuery(value: Any, context: QueryShardContext?): Query {
             throw QueryShardException(
-                    context,
-                    "ExternalFile field type does not support search queries"
+                context,
+                "ExternalFile field type does not support search queries"
             )
         }
 
         override fun existsQuery(context: QueryShardContext): Query {
             throw QueryShardException(
-                    context,
-                    "ExternalField field type does not support exists queries"
+                context,
+                "ExternalFile field type does not support exists queries"
+            )
+        }
+
+        override fun valueFetcher(
+            context: QueryShardContext,
+            searchLookup: SearchLookup,
+            format: String?,
+        ): ValueFetcher {
+            // TODO: Implement fetching values
+            throw QueryShardException(
+                context,
+                "ExternalField field type does not support fetching values"
             )
         }
 
@@ -184,7 +197,11 @@ class ExternalFileFieldMapper private constructor(
             fullyQualifiedIndexName: String,
             searchLookupSupplier: Supplier<SearchLookup>
         ): IndexFieldData.Builder {
-            return IndexFieldData.Builder { indexSettings, _, cache, breakerService, mapperService ->
+            return IndexFieldData.Builder { cache, breakerService ->
+                val searchLookup = searchLookupSupplier.get()
+                val mapperService = searchLookup.doc().mapperService();
+                val shardId = searchLookup.shardId()
+
                 val keyFieldType = mapperService.fieldType(keyFieldName)
                 val externalFieldKeyType = when (keyFieldType.typeName()) {
                     "integer" -> ExternalFieldKeyType.INT
@@ -196,15 +213,13 @@ class ExternalFileFieldMapper private constructor(
                         )
                     }
                 }
-                val searchLookup = searchLookupSupplier.get()
-                val shardId: Int = searchLookup.shardId()
                 val keyFieldData = keyFieldType
                     .fielddataBuilder(fullyQualifiedIndexName, searchLookupSupplier)
-                    .build(indexSettings, keyFieldType, cache, breakerService, mapperService) as? IndexNumericFieldData
+                    .build(cache, breakerService) as? IndexNumericFieldData
                     ?: throw IllegalStateException("[$keyFieldName] field must be numeric")
+
                 ExternalFileFieldData(
                     name(),
-                    indexSettings.index,
                     keyFieldData,
                     ExternalFileService.instance.getValues(mapName, externalFieldKeyType, if (sharding) shardId else null)
                 )
@@ -214,7 +229,6 @@ class ExternalFileFieldMapper private constructor(
 
     class ExternalFileFieldData(
         private val fieldName: String,
-        private val index: Index,
         private val keyFieldData: IndexNumericFieldData,
         private val values: ExternalFileValues
     ) : IndexNumericFieldData() {
@@ -279,10 +293,6 @@ class ExternalFileFieldMapper private constructor(
             override fun close() {}
         }
 
-        override fun index(): Index {
-            return index
-        }
-
         override fun getValuesSourceType(): ValuesSourceType {
             return CoreValuesSourceType.NUMERIC
         }
@@ -306,7 +316,5 @@ class ExternalFileFieldMapper private constructor(
         override fun loadDirect(ctx: LeafReaderContext): LeafNumericFieldData {
             return load(ctx)
         }
-
-        override fun clear() {}
     }
 }

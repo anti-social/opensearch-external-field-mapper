@@ -1,4 +1,4 @@
-package company.evo.elasticsearch.indices
+package company.evo.opensearch.indices
 
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapROEnv

@@ -14,27 +14,27 @@
 * limitations under the License.
 */
 
-package company.evo.elasticsearch.plugin.mapper
+package company.evo.opensearch.plugin.mapper
 
 import java.util.Collections
 
-import company.evo.elasticsearch.index.mapper.external.ExternalFileFieldMapper
-import company.evo.elasticsearch.indices.ExternalFileService
+import company.evo.opensearch.index.mapper.external.ExternalFileFieldMapper
+import company.evo.opensearch.indices.ExternalFileService
 
-import org.elasticsearch.client.Client
-import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
-import org.elasticsearch.cluster.service.ClusterService
-import org.elasticsearch.common.io.stream.NamedWriteableRegistry
-import org.elasticsearch.common.xcontent.NamedXContentRegistry
-import org.elasticsearch.env.Environment
-import org.elasticsearch.env.NodeEnvironment
-import org.elasticsearch.index.mapper.Mapper
-import org.elasticsearch.plugins.MapperPlugin
-import org.elasticsearch.plugins.Plugin
-import org.elasticsearch.repositories.RepositoriesService
-import org.elasticsearch.script.ScriptService
-import org.elasticsearch.threadpool.ThreadPool
-import org.elasticsearch.watcher.ResourceWatcherService
+import org.opensearch.client.Client
+import org.opensearch.cluster.metadata.IndexNameExpressionResolver
+import org.opensearch.cluster.service.ClusterService
+import org.opensearch.core.common.io.stream.NamedWriteableRegistry
+import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.env.Environment
+import org.opensearch.env.NodeEnvironment
+import org.opensearch.index.mapper.Mapper
+import org.opensearch.plugins.MapperPlugin
+import org.opensearch.plugins.Plugin
+import org.opensearch.repositories.RepositoriesService
+import org.opensearch.script.ScriptService
+import org.opensearch.threadpool.ThreadPool
+import org.opensearch.watcher.ResourceWatcherService
 
 import java.util.function.Supplier
 

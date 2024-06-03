@@ -14,29 +14,30 @@
 * limitations under the License.
 */
 
-package company.evo.elasticsearch.index.mapper.external
+package company.evo.opensearch.index.mapper.external
 
-import company.evo.elasticsearch.indices.ExternalFileService
-import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
+import company.evo.opensearch.indices.ExternalFileService
+import company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 
-import org.elasticsearch.common.bytes.BytesReference
-import org.elasticsearch.common.compress.CompressedXContent
-import org.elasticsearch.common.xcontent.XContentBuilder
-import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
-import org.elasticsearch.common.xcontent.XContentType
-import org.elasticsearch.index.IndexService
-import org.elasticsearch.index.mapper.MapperParsingException
-import org.elasticsearch.index.mapper.MapperService
-import org.elasticsearch.index.mapper.SourceToParse
-import org.elasticsearch.plugins.Plugin
-import org.elasticsearch.test.ESSingleNodeTestCase
-import org.elasticsearch.test.InternalSettingsPlugin
+import org.opensearch.common.compress.CompressedXContent
+import org.opensearch.common.xcontent.XContentFactory.jsonBuilder
+import org.opensearch.common.xcontent.XContentType
+import org.opensearch.core.common.bytes.BytesReference
+import org.opensearch.core.xcontent.XContentBuilder
+import org.opensearch.index.IndexService
+import org.opensearch.index.mapper.MapperParsingException
+import org.opensearch.index.mapper.MapperService
+import org.opensearch.index.mapper.SourceToParse
+import org.opensearch.plugins.Plugin
+import org.opensearch.test.OpenSearchSingleNodeTestCase
+import org.opensearch.test.InternalSettingsPlugin
 
 import org.hamcrest.Matchers.containsString
 
 import org.junit.Before
+import org.junit.Ignore
 
 import java.nio.file.Files
 import java.util.Arrays
@@ -51,7 +52,7 @@ inline fun XContentBuilder.obj(
     return this
 }
 
-class ExternalFieldMapperParserTests : ESSingleNodeTestCase() {
+class ExternalFieldMapperParserTests : OpenSearchSingleNodeTestCase() {
 
     lateinit var indexService: IndexService
     lateinit var mapperService: MapperService
@@ -71,25 +72,26 @@ class ExternalFieldMapperParserTests : ESSingleNodeTestCase() {
 
     fun testDefaults() {
         val mapping = jsonBuilder().obj {
-            obj("type") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("ext_field") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "test_ext_file")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("ext_field") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "test_ext_file")
                 }
             }
         }
 
-        val documentMapper = mapperService.parse("type", CompressedXContent(BytesReference.bytes(mapping)), false)
+        val documentMapper = mapperService.parse(
+            MapperService.SINGLE_MAPPING_NAME,
+            CompressedXContent(BytesReference.bytes(mapping))
+        )
 
         val parsedDoc = documentMapper.parse(
                 SourceToParse(
-                        "test", "type", "1",
+                        "test", "1",
                         BytesReference.bytes(
                                 jsonBuilder().obj {
                                     field("id", 1)
@@ -154,6 +156,7 @@ class ExternalFieldMapperParserTests : ESSingleNodeTestCase() {
     //     }
     // }
 
+    // @Ignore
     fun testStoredNotAllowed() {
         val mapping = jsonBuilder().obj {
             obj("type") {
@@ -168,12 +171,15 @@ class ExternalFieldMapperParserTests : ESSingleNodeTestCase() {
             }
         }
         try {
-            mapperService.parse("type", CompressedXContent(BytesReference.bytes(mapping)), false)
+            mapperService.parse(
+                MapperService.SINGLE_MAPPING_NAME,
+                CompressedXContent(BytesReference.bytes(mapping))
+            )
             fail("Expected a mapper parsing exception")
         } catch (e: MapperParsingException) {
             assertThat(
                 e.message,
-                containsString("unknown parameter [stored] on mapper [ext_field] of type [external_file]")
+                containsString("!!!Root mapping definition has unsupported parameters:")
             )
         }
     }

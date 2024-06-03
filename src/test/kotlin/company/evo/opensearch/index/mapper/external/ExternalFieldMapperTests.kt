@@ -14,32 +14,32 @@
 * limitations under the License.
 */
 
-package company.evo.elasticsearch.index.mapper.external
+package company.evo.opensearch.index.mapper.external
 
 import java.nio.file.Files
 
-import company.evo.elasticsearch.indices.ExternalFileService
-import company.evo.elasticsearch.plugin.mapper.ExternalFileMapperPlugin
+import company.evo.opensearch.indices.ExternalFileService
+import company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin
 import company.evo.persistent.hashmap.straight.StraightHashMapEnv
 import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 import company.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
 
-import org.elasticsearch.action.search.SearchResponse
-import org.elasticsearch.client.Requests.searchRequest
-import org.elasticsearch.cluster.routing.Murmur3HashFunction
-import org.elasticsearch.common.settings.Settings
-import org.elasticsearch.common.xcontent.XContentBuilder
-import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
-import org.elasticsearch.core.internal.io.IOUtils
-import org.elasticsearch.index.IndexService
-import org.elasticsearch.index.query.QueryBuilders.functionScoreQuery
-import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders.fieldValueFactorFunction
-import org.elasticsearch.plugins.Plugin
-import org.elasticsearch.search.builder.SearchSourceBuilder.searchSource
-import org.elasticsearch.search.sort.SortOrder
-import org.elasticsearch.test.ESSingleNodeTestCase
-import org.elasticsearch.test.InternalSettingsPlugin
-import org.elasticsearch.test.hamcrest.ElasticsearchAssertions.*
+import org.opensearch.action.search.SearchResponse
+import org.opensearch.client.Requests.searchRequest
+import org.opensearch.cluster.routing.Murmur3HashFunction
+import org.opensearch.common.settings.Settings
+import org.opensearch.core.xcontent.XContentBuilder
+import org.opensearch.common.xcontent.XContentFactory.jsonBuilder
+import org.opensearch.common.util.io.IOUtils
+import org.opensearch.index.IndexService
+import org.opensearch.index.query.QueryBuilders.functionScoreQuery
+import org.opensearch.index.query.functionscore.ScoreFunctionBuilders.fieldValueFactorFunction
+import org.opensearch.plugins.Plugin
+import org.opensearch.search.builder.SearchSourceBuilder.searchSource
+import org.opensearch.search.sort.SortOrder
+import org.opensearch.test.OpenSearchSingleNodeTestCase
+import org.opensearch.test.InternalSettingsPlugin
+import org.opensearch.test.hamcrest.OpenSearchAssertions.*
 
 import org.hamcrest.Matchers.*
 
@@ -72,7 +72,7 @@ inline fun <T: AutoCloseable?, R> List<T>.use(block: (List<T>) -> R): R {
     }
 }
 
-class ExternalFieldMapperTests : ESSingleNodeTestCase() {
+class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
     override fun getPlugins(): Collection<Class<out Plugin>> {
         return pluginList(
             InternalSettingsPlugin::class.java,
@@ -141,30 +141,27 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         val mapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "ext_price")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
                 }
             }
         }
-        createIndex(indexName, 1, "product", mapping)
+        createIndex(indexName, 1, mapping)
 
         val mappingsResponse = client().admin()
             .indices()
             .prepareGetMappings(indexName)
             .get()
-        val productMapping = mappingsResponse.mappings()["test"]["product"]
-        assertThat(productMapping.type(), equalTo("product"))
+        val productMapping = mappingsResponse.mappings()["test"]!!
         val productFields = productMapping.sourceAsMap()["properties"] as Map<*, *>
         val extPriceField = productFields["ext_price"] as Map<*, *>
         assertThat(extPriceField["type"] as String, equalTo("external_file"))
@@ -182,30 +179,27 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         initMapLongFloat("ext_price", null, mapOf(1L to 1.1F, 2L to 1.2F, Int.MAX_VALUE.toLong() + 1L to 1.3F))
 
         val mapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "long")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "ext_price")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "long")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
                 }
             }
         }
-        createIndex(indexName, 1, "product", mapping)
+        createIndex(indexName, 1, mapping)
 
         val mappingsResponse = client().admin()
             .indices()
             .prepareGetMappings(indexName)
             .get()
-        val productMapping = mappingsResponse.mappings()["test"]["product"]
-        assertThat(productMapping.type(), equalTo("product"))
+        val productMapping = mappingsResponse.mappings()["test"]!!
         val productFields = productMapping.sourceAsMap()["properties"] as Map<*, *>
         val extPriceField = productFields["ext_price"] as Map<*, *>
         assertThat(extPriceField["type"] as String, equalTo("external_file"))
@@ -224,31 +218,28 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         initMap("ext_price", numShards, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         val mapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "ext_price")
-                        field("sharding", true)
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                    field("sharding", true)
                 }
             }
         }
-        createIndex(indexName, numShards, "product", mapping)
+        createIndex(indexName, numShards, mapping)
 
         val mappingsResponse = client().admin()
             .indices()
             .prepareGetMappings(indexName)
             .get()
-        val productMapping = mappingsResponse.mappings()["test"]["product"]
-        assertThat(productMapping.type(), equalTo("product"))
+        val productMapping = mappingsResponse.mappings()["test"]!!
         val productFields = productMapping.sourceAsMap()["properties"] as Map<*, *>
         val extPriceField = productFields["ext_price"] as Map<*, *>
         assertThat(extPriceField["type"] as String, equalTo("external_file"))
@@ -268,23 +259,21 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         initMap("ext_price", numShards, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         val mapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "ext_price")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
                 }
             }
         }
-        createIndex(indexName, numShards, "product", mapping)
+        createIndex(indexName, numShards, mapping)
 
         indexTestDocuments(indexName)
 
@@ -303,7 +292,6 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         client().admin()
             .indices()
             .preparePutMapping(indexName)
-            .setType("product")
             .setSource(mappingWithSharding)
             .get()
 
@@ -315,23 +303,21 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         val mapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "ext_price")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
                 }
             }
         }
-        createIndex(indexName, 1, "product", mapping)
+        createIndex(indexName, 1, mapping)
 
         indexTestDocuments(indexName)
 
@@ -348,19 +334,17 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         client().admin().indices().prepareDeleteTemplate("*").get()
 
         val mapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "ext_price")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
                 }
             }
         }
@@ -368,7 +352,7 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
             .setPatterns(listOf("test_*"))
             .setSettings(indexSettings(1))
             .setOrder(0)
-            .addMapping("product", mapping)
+            .setMapping(mapping)
             .get()
 
         val tmplResp = client().admin().indices().prepareGetTemplates().get()
@@ -385,48 +369,43 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
         initMap("new_ext_price", null, mapOf(1 to 0.9F, 2 to 0.8F, 3 to 0.7F, 4 to 1.4F))
 
         val mapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "ext_price")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
                 }
             }
         }
-        createIndex(indexName, 1, "product", mapping)
+        createIndex(indexName, 1, mapping)
 
         indexTestDocuments(indexName)
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
 
         val newMapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "new_ext_price")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "new_ext_price")
                 }
             }
         }
         client().admin()
             .indices()
             .preparePutMapping(indexName)
-            .setType("product")
             .setSource(newMapping)
             .get()
 
@@ -436,23 +415,21 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     fun testPickUpExternalFileOnTheFly() {
         val indexName = "test"
         val mapping = jsonBuilder().obj {
-            obj("product") {
-                obj("properties") {
-                    obj("id") {
-                        field("type", "integer")
-                    }
-                    obj("name") {
-                        field("type", "text")
-                    }
-                    obj("ext_price") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "ext_price")
-                    }
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
                 }
             }
         }
-        createIndex(indexName, 1, "product", mapping)
+        createIndex(indexName, 1, mapping)
 
         indexTestDocuments(indexName)
 
@@ -464,13 +441,13 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     }
 
     private fun createIndex(
-        indexName: String, numShards: Int, type: String, mapping: XContentBuilder
+        indexName: String, numShards: Int, mapping: XContentBuilder
     ): IndexService {
         val createIndexRequest = client().admin()
             .indices()
             .prepareCreate(indexName)
             .setSettings(indexSettings(numShards))
-            .addMapping(type, mapping)
+            .setMapping(mapping)
         return createIndex(indexName, createIndexRequest)
     }
 
@@ -482,7 +459,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     }
 
     private fun indexTestDocuments(indexName: String) {
-        client().prepareIndex(indexName, "product", "1")
+        client().prepareIndex(indexName)
+            .setId("1")
             .setSource(
                 jsonBuilder().obj {
                     field("id", 1)
@@ -490,7 +468,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 }
             )
             .get()
-        client().prepareIndex(indexName, "product", "2")
+        client().prepareIndex(indexName)
+            .setId("2")
             .setSource(
                 jsonBuilder().obj {
                     field("id", 2)
@@ -498,7 +477,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 }
             )
             .get()
-        client().prepareIndex(indexName, "product", "3")
+        client().prepareIndex(indexName)
+            .setId("3")
             .setSource(
                 jsonBuilder().obj {
                     field("id", 3)
@@ -506,7 +486,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 }
             )
             .get()
-        client().prepareIndex(indexName, "product", "4")
+        client().prepareIndex(indexName)
+            .setId("4")
             .setSource(
                 jsonBuilder().obj {
                     field("id", 4)
@@ -519,7 +500,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
     }
 
     private fun indexTestDocumentsWithLongKeys(indexName: String) {
-        client().prepareIndex(indexName, "product", "1")
+        client().prepareIndex(indexName)
+            .setId("1")
             .setSource(
                 jsonBuilder().obj {
                     field("id", 1L)
@@ -527,7 +509,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 }
             )
             .get()
-        client().prepareIndex(indexName, "product", "2")
+        client().prepareIndex(indexName)
+            .setId("2")
             .setSource(
                 jsonBuilder().obj {
                     field("id", 2L)
@@ -535,7 +518,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 }
             )
             .get()
-        client().prepareIndex(indexName, "product", "3")
+        client().prepareIndex(indexName)
+            .setId("3")
             .setSource(
                 jsonBuilder().obj {
                     field("id", Int.MAX_VALUE.toLong() + 1L)
@@ -543,7 +527,8 @@ class ExternalFieldMapperTests : ESSingleNodeTestCase() {
                 }
             )
             .get()
-        client().prepareIndex(indexName, "product", "4")
+        client().prepareIndex(indexName)
+            .setId("4")
             .setSource(
                 jsonBuilder().obj {
                     field("id", 4)

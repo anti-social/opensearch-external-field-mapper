@@ -1,4 +1,4 @@
-package company.evo.elasticsearch.indices
+package company.evo.opensearch.indices
 
 data class FileSettings(
         val name: String,

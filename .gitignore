@@ -10,3 +10,5 @@ hs_err_pid*
 .vagga/
 .gradle/
 build/
+.idea/
+persistent-hashmap/*

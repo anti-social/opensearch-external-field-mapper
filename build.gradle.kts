@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.nio.file.Paths
 
 buildscript {
-    val defaultOpensearchVersion = "2.14.0"
+    val defaultOpensearchVersion = "2.17.0"
     val opensearchVersion = if (hasProperty("opensearchVersion")) {
         property("opensearchVersion")
     } else {

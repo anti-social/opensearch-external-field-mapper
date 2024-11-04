@@ -18,8 +18,8 @@ package company.evo.opensearch.index.mapper.external
 
 import company.evo.opensearch.indices.ExternalFileService
 import company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin
-import company.evo.persistent.hashmap.straight.StraightHashMapEnv
-import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
+import dev.evo.persistent.hashmap.straight.StraightHashMapEnv
+import dev.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 
 import org.opensearch.common.compress.CompressedXContent
 import org.opensearch.common.xcontent.XContentFactory.jsonBuilder

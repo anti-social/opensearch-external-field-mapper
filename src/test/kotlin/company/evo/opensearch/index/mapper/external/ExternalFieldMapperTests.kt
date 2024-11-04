@@ -20,9 +20,9 @@ import java.nio.file.Files
 
 import company.evo.opensearch.indices.ExternalFileService
 import company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin
-import company.evo.persistent.hashmap.straight.StraightHashMapEnv
-import company.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
-import company.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
+import dev.evo.persistent.hashmap.straight.StraightHashMapEnv
+import dev.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
+import dev.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
 
 import org.opensearch.action.search.SearchResponse
 import org.opensearch.client.Requests.searchRequest

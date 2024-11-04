@@ -18,7 +18,7 @@ plugins {
     idea
     java
     kotlin("jvm") version "1.9.24"
-    id("org.ajoberstar.grgit") version "3.1.1"
+    id("org.ajoberstar.grgit") version "4.1.1"
     id("com.netflix.nebula.ospackage") version "11.9.0"
 }
 

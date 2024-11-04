@@ -85,6 +85,9 @@ tasks.register("listRepos") {
     }
 }
 
+// We do not have integration tests yet, but github action for elasticsearch plugin wants them
+tasks.register("integTest") {}
+
 tasks.named("assemble") {
     dependsOn("deb")
 }

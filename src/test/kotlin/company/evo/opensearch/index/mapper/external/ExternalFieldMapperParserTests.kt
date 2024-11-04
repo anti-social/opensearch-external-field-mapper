@@ -159,14 +159,12 @@ class ExternalFieldMapperParserTests : OpenSearchSingleNodeTestCase() {
     // @Ignore
     fun testStoredNotAllowed() {
         val mapping = jsonBuilder().obj {
-            obj("type") {
-                obj("properties") {
-                    obj("ext_field") {
-                        field("type", "external_file")
-                        field("key_field", "id")
-                        field("map_name", "test_ext_file")
-                        field("stored", true)
-                    }
+            obj("properties") {
+                obj("ext_field") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "test_ext_file")
+                    field("stored", true)
                 }
             }
         }
@@ -179,7 +177,7 @@ class ExternalFieldMapperParserTests : OpenSearchSingleNodeTestCase() {
         } catch (e: MapperParsingException) {
             assertThat(
                 e.message,
-                containsString("!!!Root mapping definition has unsupported parameters:")
+                containsString("unknown parameter [stored] on mapper [ext_field] of type [external_file]")
             )
         }
     }

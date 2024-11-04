@@ -56,6 +56,10 @@ repositories {
 dependencies {
     implementation("dev.evo.persistent:persistent-hashmap")
     implementation("commons-logging", "commons-logging", opensearchVersions["commonslogging"])
+    implementation("org.apache.logging.log4j", "log4j-slf4j2-impl", opensearchVersions["log4j"])
+
+    // FIXME: IDK why it does not apply transitive dependencies from persistent-hashmap
+    implementation("org.slf4j", "slf4j-api", "2.0.7")
 }
 
 java {
@@ -65,11 +69,6 @@ java {
 tasks.withType<KotlinCompile> {
     kotlinOptions.jvmTarget = JavaVersion.VERSION_11.toString()
 }
-// tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>.all {
-//     kotlinOptions {
-//         jvmTarget = JavaVersion.VERSION_1_8.toString()
-//     }
-// }
 
 tasks.register("listRepos") {
     doLast {

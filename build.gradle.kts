@@ -42,8 +42,8 @@ configure<org.opensearch.gradle.plugin.PluginPropertiesExtension> {
     noticeFile = rootProject.file("NOTICE.txt")
 }
 
-val grgit: org.ajoberstar.grgit.Grgit? by extra
-val tag = grgit?.describe(mapOf("tags" to true, "match" to listOf("v*"))) ?: "v0.0.0"
+val grgitByExtra: org.ajoberstar.grgit.Grgit? by extra
+val tag = grgitByExtra?.describe(mapOf("tags" to true, "match" to listOf("v*"))) ?: "v0.0.0"
 version = tag.trimStart('v')
 val opensearchVersions = org.opensearch.gradle.VersionProperties.getVersions() as Map<String, String>
 
@@ -96,6 +96,7 @@ tasks.register("deb", com.netflix.gradle.plugins.deb.Deb::class) {
     dependsOn("bundlePlugin")
 
     packageName = "opensearch-${pluginName}-plugin"
+    version = project.version.toString()
     requires("opensearch", opensearchVersions["opensearch"])
         .or("opensearch-oss", opensearchVersions["opensearch"])
 

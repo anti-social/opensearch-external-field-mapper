@@ -42,9 +42,9 @@ configure<org.opensearch.gradle.plugin.PluginPropertiesExtension> {
     noticeFile = rootProject.file("NOTICE.txt")
 }
 
-val grgit: org.ajoberstar.grgit.Grgit? by extra
-val tag = grgit?.describe(mapOf("tags" to true, "match" to listOf("v*"))) ?: "v0.0.0"
-version = tag.trimStart('v')
+val tag = grgit.describe(mapOf("tags" to true, "match" to listOf("v*"))) ?: "v0.0.0"
+val currentPluginVersion = tag.trimStart('v')
+version = currentPluginVersion
 val opensearchVersions = org.opensearch.gradle.VersionProperties.getVersions() as Map<String, String>
 
 val distDir = Paths.get(buildDir.path, "distributions")
@@ -96,13 +96,13 @@ tasks.register("deb", com.netflix.gradle.plugins.deb.Deb::class) {
     dependsOn("bundlePlugin")
 
     packageName = "opensearch-${pluginName}-plugin"
+    version = currentPluginVersion
     requires("opensearch", opensearchVersions["opensearch"])
         .or("opensearch-oss", opensearchVersions["opensearch"])
 
     from(zipTree(tasks["bundlePlugin"].outputs.files.singleFile))
-
-    val esHome = project.properties["esHome"] ?: "/usr/share/opensearchsearch"
-    into("$esHome/plugins/${pluginName}")
+    val opensearchHome = project.properties["esHome"] ?: "/usr/share/opensearch"
+    into("$opensearchHome/plugins/${pluginName}")
 
     doLast {
         if (properties.containsKey("assembledInfo")) {

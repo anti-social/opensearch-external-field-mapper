@@ -100,8 +100,8 @@ tasks.register("deb", com.netflix.gradle.plugins.deb.Deb::class) {
         .or("opensearch-oss", opensearchVersions["opensearch"])
 
     from(zipTree(tasks["bundlePlugin"].outputs.files.singleFile))
-    val esHome = project.properties["esHome"] ?: "/usr/share/opensearch"
-    into("$esHome/plugins/${pluginName}")
+    val opensearchHome = project.properties["esHome"] ?: "/usr/share/opensearch"
+    into("$opensearchHome/plugins/${pluginName}")
 
     doLast {
         if (properties.containsKey("assembledInfo")) {

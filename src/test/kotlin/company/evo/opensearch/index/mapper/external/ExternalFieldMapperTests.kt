@@ -25,7 +25,6 @@ import dev.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
 
 import org.opensearch.action.search.SearchResponse
-import org.opensearch.client.Requests.searchRequest
 import org.opensearch.cluster.routing.Murmur3HashFunction
 import org.opensearch.common.settings.Settings
 import org.opensearch.core.xcontent.XContentBuilder
@@ -40,6 +39,7 @@ import org.opensearch.search.sort.SortOrder
 import org.opensearch.test.OpenSearchSingleNodeTestCase
 import org.opensearch.test.InternalSettingsPlugin
 import org.opensearch.test.hamcrest.OpenSearchAssertions.*
+import org.opensearch.transport.client.Requests.searchRequest
 
 import org.hamcrest.Matchers.*
 

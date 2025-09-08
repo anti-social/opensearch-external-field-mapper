@@ -1,3 +1,6 @@
 [submodule "persistent-hashmap"]
 	path = persistent-hashmap
 	url = https://github.com/anti-social/persistent-hashmap.git
+[submodule "buildSrc"]
+	path = buildSrc
+	url = https://github.com/anti-social/opensearch-buildsrc-gradle-plugin.git

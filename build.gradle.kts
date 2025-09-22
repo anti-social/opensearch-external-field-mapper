@@ -15,7 +15,7 @@ configure<JavaPluginExtension> {
 version = Versions.project
 
 configureOpensearchPlugin(
-    name = "external-field-mapper",
+    name = project.name,
     description = "External file field mapper for OpenSearch",
     classname = "company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin",
     numberOfTestClusterNodes = 2,

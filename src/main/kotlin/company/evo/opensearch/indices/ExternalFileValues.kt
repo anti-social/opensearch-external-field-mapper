@@ -22,8 +22,8 @@ interface ExternalFileValues {
         val sharding: Boolean,
         val numShards: Int
     ) : AutoCloseable {
-        private val mapEnvs: Array<AtomicReference<StraightHashMapROEnv<*, *, *, *>?>> = Array(numShards) {
-            AtomicReference<StraightHashMapROEnv<*, *, *, *>?>(null)
+        private val mapEnvs: Array<AtomicReference<StraightHashMapROEnv<*, *, *>?>> = Array(numShards) {
+            AtomicReference<StraightHashMapROEnv<*, *, *>?>(null)
         }
 
         fun getValues(keyType: ExternalFieldKeyType, shardId: Int?): ExternalFileValues {

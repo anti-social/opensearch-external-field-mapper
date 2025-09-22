@@ -12,8 +12,10 @@ configure<JavaPluginExtension> {
     targetCompatibility = JavaVersion.VERSION_21
 }
 
+version = Versions.project
+
 configureOpensearchPlugin(
-    name = "collapse-extension",
+    name = "external-field-mapper",
     description = "External file field mapper for OpenSearch",
     classname = "company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin",
     numberOfTestClusterNodes = 2,

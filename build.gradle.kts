@@ -13,6 +13,7 @@ configure<JavaPluginExtension> {
 }
 
 version = Versions.project
+val opensearchVersions = org.opensearch.gradle.VersionProperties.getVersions() as Map<String, String>
 
 configureOpensearchPlugin(
     name = project.name,
@@ -26,4 +27,7 @@ configureOpensearchPlugin(
 
 dependencies {
     implementation("dev.evo.persistent:persistent-hashmap")
+
+    runtimeOnly("org.slf4j", "slf4j-api", opensearchVersions["slf4j"])
+    runtimeOnly("org.apache.logging.log4j", "log4j-slf4j2-impl", opensearchVersions["log4j"])
 }

@@ -327,6 +327,40 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         )
     }
 
+    fun testDocvalueFields() {
+        val indexName = "test"
+        initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                }
+            }
+        }
+        createIndex(indexName, 1, mapping)
+
+        indexTestDocuments(indexName)
+
+        assertHitsWithFields(
+            searchWithDocvalues(),
+            listOf(
+                "3" to mapOf("ext_price" to 1.3),
+                "2" to mapOf("ext_price" to 1.2),
+                "1" to mapOf("ext_price" to 1.1),
+                "4" to emptyMap(),
+            )
+        )
+    }
+
     fun testTemplate() {
         val indexName = "test_index"
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
@@ -578,6 +612,18 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
             .also(::assertNoFailures)
     }
 
+    private fun searchWithDocvalues(): SearchResponse {
+        return client().search(
+            searchRequest()
+                .source(
+                    searchSource()
+                        .sort("ext_price", SortOrder.DESC)
+                        .docValueField("ext_price")
+                        .explain(false)))
+            .actionGet()
+            .also(::assertNoFailures)
+    }
+
     private fun assertHitsWithSort(response: SearchResponse, sorts: List<Pair<String, Array<Double>>>) {
         val hits = response.hits
         assertThat(hits.hits.size, equalTo(sorts.size))
@@ -593,6 +639,30 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                         "Expected ${Double::class.java} but was ${value::class.java}: $value"
                     )
                 }
+            }
+        }
+    }
+
+    private fun assertHitsWithFields(response: SearchResponse, fields: List<Pair<String, Map<String, Double>>>) {
+        val hits = response.hits
+        assertThat(hits.hits.size, equalTo(fields.size))
+
+        fields.forEachIndexed { ix, (id, fieldValues) ->
+            val hit = hits.getAt(ix)
+            fieldValues.forEach { name, expectedValue ->
+                val hitField = hit.field(name)
+                val hitValue: Any = hitField.getValue()
+                assertThat(
+                    "Hit ${hit.id} field ${name} value is not type of double",
+                    hitValue,
+                    isA(Double::class.java)
+                )
+                val doubleHitValue = hitValue as Double
+                assertThat(
+                    "Hit ${hit.id} field ${name} value does not match",
+                    doubleHitValue,
+                    closeTo(expectedValue, 1e-6)
+                )
             }
         }
     }

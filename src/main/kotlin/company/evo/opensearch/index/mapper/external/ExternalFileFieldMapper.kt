@@ -38,12 +38,15 @@ import org.opensearch.index.mapper.ParametrizedFieldMapper
 import org.opensearch.index.mapper.ParseContext
 import org.opensearch.index.mapper.TextSearchInfo
 import org.opensearch.index.mapper.ValueFetcher
+import org.opensearch.index.mapper.DocValueFetcher
 import org.opensearch.index.query.QueryShardContext
 import org.opensearch.index.query.QueryShardException
 import org.opensearch.search.aggregations.support.CoreValuesSourceType
 import org.opensearch.search.aggregations.support.ValuesSourceType
 import org.opensearch.search.lookup.SearchLookup
+import org.opensearch.search.DocValueFormat
 
+import java.time.ZoneId
 import java.util.function.Supplier
 
 class ExternalFileFieldMapper private constructor(
@@ -193,6 +196,25 @@ class ExternalFileFieldMapper private constructor(
             )
         }
 
+        override fun docValueFormat(format: String?, timeZone: ZoneId?): DocValueFormat {
+            if (timeZone != null) {
+                throw IllegalArgumentException(
+                    "Field [${name()}] of type [${typeName()}] does not support custom time zones"
+                )
+            }
+            if (format != null) {
+                return DocValueFormat.Decimal(format)
+            }
+            return DocValueFormat.RAW
+        }
+
+        override fun valueForDisplay(value: Any?): Any? {
+            if (value == null) {
+                return null
+            }
+            return (value as Number).toDouble()
+        }
+
         override fun fielddataBuilder(
             fullyQualifiedIndexName: String,
             searchLookupSupplier: Supplier<SearchLookup>
@@ -283,6 +305,17 @@ class ExternalFileFieldMapper private constructor(
 
             override fun getBytesValues(): SortedBinaryDocValues {
                 return FieldData.toString(doubleValues)
+            }
+
+            override fun getLeafValueFetcher(format: DocValueFormat): DocValueFetcher.Leaf {
+                val values = getDoubleValues()
+                return object : DocValueFetcher.Leaf {
+                    override fun advanceExact(docId: Int) = values.advanceExact(docId)
+
+                    override fun docValueCount() = values.docValueCount()
+
+                    override fun nextValue() = values.nextValue()
+                }
             }
 
             override fun ramBytesUsed(): Long {

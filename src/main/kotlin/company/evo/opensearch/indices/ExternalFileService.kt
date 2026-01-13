@@ -74,7 +74,14 @@ class ExternalFileService internal constructor(
         mapFileProviders.clear()
     }
 
-    fun addFile(indexName: String, fieldName: String, mapName: String, sharding: Boolean, numShards: Int) {
+    fun addFile(
+        indexName: String,
+        fieldName: String,
+        mapName: String,
+        sharding: Boolean,
+        numShards: Int,
+        useMemorySegments: Boolean,
+    ) {
         val extDir = getExternalFileDir(mapName)
 
         // We don't need synchronization as compute function invocation performs atomically
@@ -88,7 +95,9 @@ class ExternalFileService internal constructor(
             ) {
                 logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, sharding=$sharding, numShards=$numShards}")
                 v?.release()
-                AtomicRefCounted(ExternalFileValues.Provider(extDir, sharding, numShards)) { it.close() }
+                AtomicRefCounted(
+                    ExternalFileValues.Provider(extDir, sharding, numShards, useMemorySegments)
+                ) { it.close() }
             } else {
                 v
             }

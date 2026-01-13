@@ -20,6 +20,7 @@ import java.nio.file.Files
 
 import company.evo.opensearch.indices.ExternalFileService
 import company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin
+import dev.evo.persistent.BufferManagement
 import dev.evo.persistent.hashmap.straight.StraightHashMapEnv
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
@@ -95,7 +96,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                 baseExtFileDir
             }
             StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
-                .useUnmapHack(true)
+                .bufferManagement(BufferManagement.MemorySegments)
                 .open(extFileDir.also { Files.createDirectories(it) })
         }
         if (entries != null) {
@@ -120,7 +121,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                 baseExtFileDir
             }
             StraightHashMapEnv.Builder(StraightHashMapType_Long_Float)
-                .useUnmapHack(true)
+                .bufferManagement(BufferManagement.MemorySegments)
                 .open(extFileDir.also { Files.createDirectories(it) })
         }
         if (entries != null) {

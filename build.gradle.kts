@@ -1,15 +1,23 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     java
-    kotlin("jvm") version "1.9.24"
+    kotlin("jvm") version "2.0.0"
     idea
     id("opensearch.opensearchplugin")
     id("opensearch.java-agent")
     id("com.netflix.nebula.ospackage")
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(22)
+    }
+}
+
 configure<JavaPluginExtension> {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_22
+    targetCompatibility = JavaVersion.VERSION_22
 }
 
 version = Versions.project

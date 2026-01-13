@@ -64,6 +64,7 @@ class ExternalFileFieldMapper private constructor(
     private val mapName: String = builder.mapName.value
     private val keyFieldName: String = builder.keyFieldName.value
     private val sharding: Boolean = builder.sharding.value
+    private val useMemorySegments: Boolean = builder.useMemorySegments.value
 
     companion object {
         @JvmStatic
@@ -117,6 +118,9 @@ class ExternalFileFieldMapper private constructor(
         val sharding: Parameter<Boolean> = Parameter.boolParam(
             "sharding", true, { m -> toType(m).sharding }, false
         )
+        val useMemorySegments: Parameter<Boolean> = Parameter.boolParam(
+            "use_memory_segments", true, { m -> toType(m).useMemorySegments }, false
+        )
 
         // val hasDocValues: Parameter<Boolean> = Parameter.boolParam(
         //     "doc_values", false, { m -> toType(m).hasDocValues }, true
@@ -143,14 +147,15 @@ class ExternalFileFieldMapper private constructor(
                     fullFieldName,
                     mapName.value,
                     sharding.value,
-                    numShards
+                    numShards,
+                    useMemorySegments.value,
                 )
             }
 
             return ExternalFileFieldMapper(
                 name,
                 ExternalFileFieldType(
-                    fullFieldName, mapName.value, keyFieldName.value, sharding.value
+                    fullFieldName, mapName.value, keyFieldName.value, sharding.value, useMemorySegments.value
                 ),
                 multiFieldsBuilder.build(this, context),
                 copyTo.build(),
@@ -163,7 +168,8 @@ class ExternalFileFieldMapper private constructor(
         name: String,
         private val mapName: String,
         private val keyFieldName: String,
-        private val sharding: Boolean
+        private val sharding: Boolean,
+        private val useMemorySegments: Boolean,
     ) : MappedFieldType(name, false, false, true, TextSearchInfo.NONE, emptyMap()) {
 
         override fun typeName(): String {
@@ -243,7 +249,9 @@ class ExternalFileFieldMapper private constructor(
                 ExternalFileFieldData(
                     name(),
                     keyFieldData,
-                    ExternalFileService.instance.getValues(mapName, externalFieldKeyType, if (sharding) shardId else null)
+                    ExternalFileService.instance.getValues(
+                        mapName, externalFieldKeyType, if (sharding) shardId else null
+                    )
                 )
             }
         }

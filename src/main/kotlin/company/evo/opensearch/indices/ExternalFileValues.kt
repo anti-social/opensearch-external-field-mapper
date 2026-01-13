@@ -1,5 +1,6 @@
 package company.evo.opensearch.indices
 
+import dev.evo.persistent.BufferManagement
 import dev.evo.persistent.FileDoesNotExistException
 import dev.evo.persistent.hashmap.straight.StraightHashMapEnv
 import dev.evo.persistent.hashmap.straight.StraightHashMapROEnv
@@ -20,7 +21,8 @@ interface ExternalFileValues {
     data class Provider(
         val dir: Path,
         val sharding: Boolean,
-        val numShards: Int
+        val numShards: Int,
+        val useMemorySegments: Boolean,
     ) : AutoCloseable {
         private val mapEnvs: Array<AtomicReference<StraightHashMapROEnv<*, *, *>?>> = Array(numShards) {
             AtomicReference<StraightHashMapROEnv<*, *, *>?>(null)
@@ -40,8 +42,13 @@ interface ExternalFileValues {
                         ExternalFieldKeyType.INT -> StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
                         ExternalFieldKeyType.LONG -> StraightHashMapEnv.Builder(StraightHashMapType_Long_Float)
                     }
+                    val bufferManagement = if (useMemorySegments) {
+                        BufferManagement.MemorySegments
+                    } else {
+                        BufferManagement.Unsafe(true)
+                    }
                     val newEnv = mapEnvBuilder
-                        .useUnmapHack(true)
+                        .bufferManagement(bufferManagement)
                         .openReadOnly(mapDir)
                     if (!mapEnv.compareAndSet(null, newEnv)) {
                         // Another thread already has set an environment

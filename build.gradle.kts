@@ -1,6 +1,6 @@
 plugins {
     java
-    kotlin("jvm") version "1.9.24"
+    kotlin("jvm") version "2.0.20"
     idea
     id("opensearch.opensearchplugin")
     id("opensearch.java-agent")
@@ -8,8 +8,8 @@ plugins {
 }
 
 configure<JavaPluginExtension> {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_22
+    targetCompatibility = JavaVersion.VERSION_22
 }
 
 version = Versions.project

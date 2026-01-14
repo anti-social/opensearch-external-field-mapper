@@ -299,6 +299,51 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
     }
 
+    fun testSwitchingToMemorySegments() {
+        val indexName = "test"
+        val numShards = 8
+        initMap("ext_price", numShards, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                    field("sharding", true)
+                }
+            }
+        }
+        createIndex(indexName, numShards, mapping)
+
+        indexTestDocuments(indexName)
+
+        val mappingWithSharding = jsonBuilder().obj {
+            obj("properties") {
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                    field("sharding", true)
+                    field("use_memory_segments", true)
+                }
+            }
+        }
+        client().admin()
+            .indices()
+            .preparePutMapping(indexName)
+            .setSource(mappingWithSharding)
+            .get()
+
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+    }
+
     fun testSorting() {
         val indexName = "test"
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))

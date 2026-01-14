@@ -132,7 +132,7 @@ class ExternalFileFieldMapper private constructor(
         )
 
         override fun getParameters(): MutableList<Parameter<*>> {
-            return mutableListOf(mapName, keyFieldName, sharding, scalingFactor)
+            return mutableListOf(mapName, keyFieldName, sharding, useMemorySegments, scalingFactor)
         }
 
         override fun build(context: BuilderContext): ExternalFileFieldMapper {

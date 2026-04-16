@@ -223,11 +223,11 @@ class ExternalFileFieldMapper private constructor(
 
         override fun fielddataBuilder(
             fullyQualifiedIndexName: String,
-            searchLookupSupplier: Supplier<SearchLookup>
+            searchLookupSupplier: Supplier<SearchLookup>,
         ): IndexFieldData.Builder {
             return IndexFieldData.Builder { cache, breakerService ->
                 val searchLookup = searchLookupSupplier.get()
-                val mapperService = searchLookup.doc().mapperService();
+                val mapperService = searchLookup.doc().mapperService()
                 val shardId = searchLookup.shardId()
 
                 val keyFieldType = mapperService.fieldType(keyFieldName)
@@ -247,34 +247,54 @@ class ExternalFileFieldMapper private constructor(
                     ?: throw IllegalStateException("[$keyFieldName] field must be numeric")
 
                 ExternalFileFieldData(
+                    mapName,
+                    externalFieldKeyType,
                     name(),
                     keyFieldData,
-                    ExternalFileService.instance.getValues(
-                        mapName, externalFieldKeyType, if (sharding) shardId else null
-                    )
+                    if (sharding) shardId else null,
                 )
             }
         }
     }
 
     class ExternalFileFieldData(
+        private val mapName: String,
+        private val keyType: ExternalFieldKeyType,
         private val fieldName: String,
         private val keyFieldData: IndexNumericFieldData,
-        private val values: ExternalFileValues
+        private val shardId: Int?,
     ) : IndexNumericFieldData() {
 
         companion object {
             private val DEFAULT_VALUE = Double.NaN
+
+            // There is no way to force OpenSearch notify when a request
+            // is finished to release resources held by field data.
+            // So we store all the external file values as a thread locals and
+            // release them on the next request.
+            private val VALUES: ThreadLocal<HashMap<String, ExternalFileValues>> =
+                ThreadLocal.withInitial(::HashMap)
+        }
+
+        init {
+            val allValues = VALUES.get()
+            val values = allValues[mapName]
+            if (values != null) {
+                values.close()
+            }
+            allValues[mapName] = ExternalFileService.instance.getValues(
+                mapName, keyType, shardId
+            )
         }
 
         class AtomicNumericKeyFieldData(
-                private val values: ExternalFileValues,
-                private val keyFieldData: LeafNumericFieldData
+            private val values: ExternalFileValues,
+            private val keyFieldData: LeafNumericFieldData
         ) : LeafNumericFieldData {
 
             class Values(
-                    private val values: ExternalFileValues,
-                    private val keys: SortedNumericDocValues
+                private val values: ExternalFileValues,
+                private val keys: SortedNumericDocValues
             ) : SortedNumericDoubleValues() {
 
                 private var value = DEFAULT_VALUE
@@ -351,7 +371,10 @@ class ExternalFileFieldMapper private constructor(
         }
 
         override fun load(ctx: LeafReaderContext): LeafNumericFieldData {
-            return AtomicNumericKeyFieldData(values, keyFieldData.load(ctx))
+            return AtomicNumericKeyFieldData(
+                VALUES.get().getOrDefault(mapName, EmptyFileValues),
+                keyFieldData.load(ctx)
+            )
         }
 
         override fun loadDirect(ctx: LeafReaderContext): LeafNumericFieldData {

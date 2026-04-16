@@ -19,11 +19,15 @@ package company.evo.opensearch.index.mapper.external
 import java.nio.file.Files
 
 import company.evo.opensearch.indices.ExternalFileService
+import company.evo.opensearch.indices.ExternalFieldKeyType
 import company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin
 import dev.evo.persistent.BufferManagement
+import dev.evo.persistent.hashmap.straight.StraightHashMap_Int_Float
+import dev.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapEnv
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
+import dev.evo.persistent.hashmap.straight.PutResult
 
 import org.opensearch.action.search.SearchResponse
 import org.opensearch.cluster.routing.Murmur3HashFunction
@@ -31,18 +35,27 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentFactory.jsonBuilder
 import org.opensearch.common.util.io.IOUtils
+import org.opensearch.common.lucene.search.function.FunctionScoreQuery
 import org.opensearch.index.IndexService
 import org.opensearch.index.query.QueryBuilders.functionScoreQuery
+import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder
+import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder
 import org.opensearch.index.query.functionscore.ScoreFunctionBuilders.fieldValueFactorFunction
+import org.opensearch.index.query.QueryBuilder
 import org.opensearch.plugins.Plugin
 import org.opensearch.search.builder.SearchSourceBuilder.searchSource
 import org.opensearch.search.sort.SortOrder
 import org.opensearch.test.OpenSearchSingleNodeTestCase
 import org.opensearch.test.InternalSettingsPlugin
-import org.opensearch.test.hamcrest.OpenSearchAssertions.*
+import org.opensearch.test.hamcrest.OpenSearchAssertions.assertNoFailures
 import org.opensearch.transport.client.Requests.searchRequest
 
-import org.hamcrest.Matchers.*
+import org.hamcrest.MatcherAssert
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.closeTo
+import org.hamcrest.Matchers.hasSize
+import org.hamcrest.Matchers.isA
+import org.hamcrest.Matcher
 
 import org.junit.After
 import org.junit.Assert
@@ -74,6 +87,17 @@ inline fun <T: AutoCloseable?, R> List<T>.use(block: (List<T>) -> R): R {
 }
 
 class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
+    companion object {
+        // These prevent a deprecation warning
+        fun <T> assertThat(actual: T, matcher: Matcher<in T?>) {
+            MatcherAssert.assertThat(actual, matcher)
+        }
+
+        fun <T> assertThat(reason: String, actual: T, matcher: Matcher<in T?>) {
+            MatcherAssert.assertThat(reason, actual, matcher)
+        }
+    }
+
     override fun getPlugins(): Collection<Class<out Plugin>> {
         return pluginList(
             InternalSettingsPlugin::class.java,
@@ -87,7 +111,9 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         IOUtils.rm(ExternalFileService.instance.externalDataDir)
     }
 
-    private fun initMap(name: String, numShards: Int? = null, entries: Map<Int, Float>? = null) {
+    private fun initMap(
+        name: String, numShards: Int? = null, entries: Map<Int, Float>? = null
+    ): List<StraightHashMapEnv<*, StraightHashMap_Int_Float, StraightHashMapRO_Int_Float>> {
         val baseExtFileDir = ExternalFileService.instance.getExternalFileDir(name)
         val envs = (0 until (numShards ?: 1)).map { shardId ->
             val extFileDir = if (numShards != null) {
@@ -96,18 +122,28 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                 baseExtFileDir
             }
             StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
+                .initialEntries(20)
                 .bufferManagement(BufferManagement.MemorySegments)
                 .open(extFileDir.also { Files.createDirectories(it) })
         }
+
         if (entries != null) {
-            envs.use { mapEnvs ->
-                mapEnvs.map { it.openMap() }.use { maps ->
-                    entries.forEach { (k , v) ->
-                        val shardId = Math.floorMod(Murmur3HashFunction.hash(k.toString()), numShards ?: 1)
-                        val map = maps[shardId]
-                        map.put(k, v)
-                    }
-                }
+            updateMap(envs, numShards, entries)
+        }
+
+        return envs
+    }
+
+    private fun updateMap(
+        envs: List<StraightHashMapEnv<*, StraightHashMap_Int_Float, StraightHashMapRO_Int_Float>>,
+        numShards: Int?,
+        entries: Map<Int, Float>
+    ) {
+        envs.map { it.openMap() }.use { maps ->
+            entries.forEach { (k , v) ->
+                val shardId = Math.floorMod(Murmur3HashFunction.hash(k.toString()), numShards ?: 1)
+                val map = maps[shardId]
+                map.put(k, v)
             }
         }
     }
@@ -121,6 +157,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                 baseExtFileDir
             }
             StraightHashMapEnv.Builder(StraightHashMapType_Long_Float)
+                .initialEntries(20)
                 .bufferManagement(BufferManagement.MemorySegments)
                 .open(extFileDir.also { Files.createDirectories(it) })
         }
@@ -173,6 +210,192 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         indexTestDocuments(indexName)
 
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+    }
+
+    fun testRealTimeUpdates() {
+        val indexName = "test"
+        val envs = initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                }
+            }
+        }
+        createIndex(indexName, 1, mapping)
+
+        val mappingsResponse = client().admin()
+            .indices()
+            .prepareGetMappings(indexName)
+            .get()
+        val productMapping = mappingsResponse.mappings()["test"]!!
+        val productFields = productMapping.sourceAsMap()["properties"] as Map<*, *>
+        val extPriceField = productFields["ext_price"] as Map<*, *>
+        assertThat(extPriceField["type"] as String, equalTo("external_file"))
+        assertThat(extPriceField["key_field"] as String, equalTo("id"))
+        assertThat(extPriceField["map_name"] as String, equalTo("ext_price"))
+        assertThat(extPriceField.size, equalTo(3))
+
+        indexTestDocuments(indexName)
+
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+
+        updateMap(envs, 1, mapOf(4 to 1.4F))
+
+        assertHits(search(), listOf("4" to 1.4F, "3" to 1.3F, "2" to 1.2F, "1" to 1.1F))
+
+        ExternalFileService.instance.getValues(
+            "ext_price", ExternalFieldKeyType.INT, 0
+        ).use { values ->
+            assertThat(values.version, equalTo(0))
+            // The first ref is held by the environment as a current map,
+            // the second one is stored as a thread local inside ExternalFileFieldData
+            // and the last one is held by the values variable
+            assertThat(values.refCount(), equalTo(3))
+
+            // Trigger rehashing
+            envs.forEach { env ->
+                env.openMap().use { map ->
+                    val newMap = env.newMap(map, 40)
+                    env.commit(newMap)
+                }
+            }
+            ExternalFileService.instance.getValues(
+                "ext_price", ExternalFieldKeyType.INT, 0
+            ).use { newValues ->
+                assertThat(newValues.version, equalTo(1))
+            }
+
+            ExternalFileService.instance.reset()
+            assertThat(values.refCount(), equalTo(2))
+        }
+    }
+
+    fun testMultipleUsageOfTheSameExternalField() {
+        val indexName = "test"
+        val envs = initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                }
+            }
+        }
+        createIndex(indexName, 1, mapping)
+
+        indexTestDocuments(indexName)
+
+        val query = FunctionScoreQueryBuilder(
+            arrayOf(
+                FilterFunctionBuilder(
+                    fieldValueFactorFunction("ext_price").missing(0.0),
+                ),
+                FilterFunctionBuilder(
+                    fieldValueFactorFunction("ext_price").missing(0.0),
+                ),
+            )
+        )
+            .scoreMode(FunctionScoreQuery.ScoreMode.SUM) 
+        assertHits(
+            search(query),
+            listOf("3" to 2.6F, "2" to 2.4F, "1" to 2.2F, "4" to 0F)
+        )
+        ExternalFileService.instance.getValues(
+            "ext_price", ExternalFieldKeyType.INT, 0
+        ).use { values ->
+            assertThat(values.refCount(), equalTo(3))
+
+            // Trigger rehashing
+            envs.forEach { env ->
+                env.openMap().use { map ->
+                    val newMap = env.newMap(map, 40)
+                    env.commit(newMap)
+                }
+            }
+            assertThat(values.refCount(), equalTo(3))
+
+            // After processing a new search query the only reference is a
+            // values local variable
+            search(query)
+            assertThat(values.refCount(), equalTo(1))
+        }
+    }
+
+    fun testMultipleExternalFields() {
+        val indexName = "test"
+        initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+        initMap("ext_rank", null, mapOf(1 to 100F, 2 to 200F, 3 to 300F, 4 to 400F))
+
+        val mapping = jsonBuilder().obj {
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                }
+                obj("ext_rank") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_rank")
+                }
+            }
+        }
+        createIndex(indexName, 1, mapping)
+
+        val mappingsResponse = client().admin()
+            .indices()
+            .prepareGetMappings(indexName)
+            .get()
+        val productMapping = mappingsResponse.mappings()["test"]!!
+        val productFields = productMapping.sourceAsMap()["properties"] as Map<*, *>
+        val extPriceField = productFields["ext_price"] as Map<*, *>
+        assertThat(extPriceField["type"] as String, equalTo("external_file"))
+        assertThat(extPriceField["key_field"] as String, equalTo("id"))
+        assertThat(extPriceField["map_name"] as String, equalTo("ext_price"))
+        assertThat(extPriceField.size, equalTo(3))
+
+        indexTestDocuments(indexName)
+
+        val query = FunctionScoreQueryBuilder(
+            arrayOf(
+                FilterFunctionBuilder(
+                    fieldValueFactorFunction("ext_price").missing(0.0),
+                ),
+                FilterFunctionBuilder(
+                    fieldValueFactorFunction("ext_rank").missing(0.0),
+                ),
+            )
+        )
+            .scoreMode(FunctionScoreQuery.ScoreMode.SUM)
+
+        assertHits(
+            search(query),
+            listOf("4" to 400F, "3" to 301.3F, "2" to 201.2F, "1" to 101.1F)
+        )
     }
 
     fun testLongKey() {
@@ -620,10 +843,14 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         client().admin().indices().prepareRefresh().get()
     }
 
-    private fun search(): SearchResponse {
-        val query = functionScoreQuery(
-            fieldValueFactorFunction("ext_price").missing(0.0)
-        )
+    private fun search(query: QueryBuilder? = null): SearchResponse {
+        val query = if (query == null ) {
+            functionScoreQuery(
+                fieldValueFactorFunction("ext_price").missing(0.0)
+            )
+        } else {
+            query
+        }
         return client().search(
             searchRequest().source(
                 searchSource()

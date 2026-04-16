@@ -17,7 +17,7 @@ enum class ExternalFieldKeyType {
     INT, LONG
 }
 
-interface ExternalFileValues {
+interface ExternalFileValues : AutoCloseable {
     data class Provider(
         val dir: Path,
         val sharding: Boolean,
@@ -60,8 +60,16 @@ interface ExternalFileValues {
                 }
             }
             return when(keyType) {
-                ExternalFieldKeyType.INT -> IntFloatFileValues(env.getCurrentMap() as StraightHashMapRO_Int_Float)
-                ExternalFieldKeyType.LONG -> LongFloatFileValues(env.getCurrentMap() as StraightHashMapRO_Long_Float)
+                ExternalFieldKeyType.INT -> {
+                    IntFloatFileValues(
+                        env.getCurrentMap() as StraightHashMapRO_Int_Float
+                    )
+                }
+                ExternalFieldKeyType.LONG -> {
+                    LongFloatFileValues(
+                        env.getCurrentMap() as StraightHashMapRO_Long_Float
+                    )
+                }
             }
         }
 
@@ -72,11 +80,22 @@ interface ExternalFileValues {
         }
     }
 
+    // These are for testing purposes
+    val version: Long
+    fun refCount(): Long
+
     fun get(key: Long, defaultValue: Double): Double
+
     fun contains(key: Long): Boolean
 }
 
 object EmptyFileValues : ExternalFileValues {
+    override val version: Long = 0
+
+    override fun refCount(): Long {
+        return 1
+    }
+
     override fun get(key: Long, defaultValue: Double): Double {
         return defaultValue
     }
@@ -84,11 +103,19 @@ object EmptyFileValues : ExternalFileValues {
     override fun contains(key: Long): Boolean {
         return false
     }
+
+    override fun close() {}
 }
 
 class LongFloatFileValues(
     private val map: StraightHashMapRO_Long_Float
 ) : ExternalFileValues {
+    override val version: Long = map.version
+
+    override fun refCount(): Long {
+        return map.refCount()
+    }
+
     override fun get(key: Long, defaultValue: Double): Double {
         val v = map.get(key, Float.NaN)
         if (v.isNaN()) {
@@ -100,11 +127,21 @@ class LongFloatFileValues(
     override fun contains(key: Long): Boolean {
         return map.contains(key)
     }
+
+    override fun close() {
+        map.close()
+    }
 }
 
 class IntFloatFileValues(
     private val map: StraightHashMapRO_Int_Float
 ) : ExternalFileValues {
+    override val version: Long = map.version
+
+    override fun refCount(): Long {
+        return map.refCount()
+    }
+
     override fun get(key: Long, defaultValue: Double): Double {
         if (key > Int.MAX_VALUE) {
             return defaultValue
@@ -118,5 +155,9 @@ class IntFloatFileValues(
 
     override fun contains(key: Long): Boolean {
         return map.contains(key.toInt())
+    }
+
+    override fun close() {
+        map.close()
     }
 }

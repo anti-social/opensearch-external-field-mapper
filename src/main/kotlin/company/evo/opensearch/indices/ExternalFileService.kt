@@ -57,8 +57,6 @@ class ExternalFileService internal constructor(
         }
     }
 
-    // private class MapFileKey(val name: String, )
-
     override fun doStart() {}
 
     override fun doStop() {}
@@ -91,7 +89,8 @@ class ExternalFileService internal constructor(
                 curProvider == null ||
                 curProvider.dir != extDir ||
                 curProvider.sharding != sharding ||
-                curProvider.numShards != numShards
+                curProvider.numShards != numShards ||
+                curProvider.useMemorySegments != useMemorySegments
             ) {
                 logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, sharding=$sharding, numShards=$numShards}")
                 v?.release()

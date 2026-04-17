@@ -106,7 +106,7 @@ class ExternalFileService internal constructor(
     fun getValues(mapName: String, keyType: ExternalFieldKeyType, shardId: Int?): ExternalFileValues {
         repeat(100) {
             val v = mapFileProviders[mapName] ?: return EmptyFileValues
-            val valuesProvider = v.retain()
+            val valuesProvider = v.retainAndGet()
             if (valuesProvider != null) {
                 try {
                     return valuesProvider.getValues(keyType, shardId)

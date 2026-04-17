@@ -28,6 +28,8 @@ import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.env.Environment
 import org.opensearch.env.NodeEnvironment
 import org.opensearch.index.mapper.Mapper
+import org.opensearch.index.IndexModule
+import org.opensearch.index.shard.SearchOperationListener
 import org.opensearch.plugins.MapperPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.repositories.RepositoriesService
@@ -35,6 +37,8 @@ import org.opensearch.script.ScriptService
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.client.Client
 import org.opensearch.watcher.ResourceWatcherService
+import org.opensearch.search.internal.SearchContext
+import org.opensearch.common.lease.Releasable
 
 import java.util.function.Supplier
 
@@ -44,6 +48,32 @@ class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
         return Collections.singletonMap(
             ExternalFileFieldMapper.CONTENT_TYPE,
             ExternalFileFieldMapper.TypeParser()
+        )
+    }
+
+    override fun onIndexModule(indexModule: IndexModule) {
+        indexModule.addSearchOperationListener(
+            object : SearchOperationListener {
+                override fun onPreQueryPhase(searchContext: SearchContext) {
+                    searchContext.addReleasable(
+                        object : Releasable {
+                            override fun close() {
+                                ExternalFileFieldMapper.ExternalFileFieldData.releaseValues()
+                            }
+                        }
+                    )
+                }
+
+                override fun onPreFetchPhase(searchContext: SearchContext) {
+                    searchContext.addReleasable(
+                        object : Releasable {
+                            override fun close() {
+                                ExternalFileFieldMapper.ExternalFileFieldData.releaseValues()
+                            }
+                        }
+                    )
+                }
+            }
         )
     }
 

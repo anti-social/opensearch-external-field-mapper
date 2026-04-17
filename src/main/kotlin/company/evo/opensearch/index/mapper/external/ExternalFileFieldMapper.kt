@@ -274,6 +274,15 @@ class ExternalFileFieldMapper private constructor(
             // release them on the next request.
             private val VALUES: ThreadLocal<HashMap<String, ExternalFileValues>> =
                 ThreadLocal.withInitial(::HashMap)
+
+            fun releaseValues() {
+                val valuesIter = VALUES.get().iterator()
+                while (valuesIter.hasNext()) {
+                    val valuesEntry = valuesIter.next()
+                    valuesEntry.value.close();
+                    valuesIter.remove()
+                }
+            }
         }
 
         init {

@@ -30,12 +30,15 @@ import dev.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
 import dev.evo.persistent.hashmap.straight.PutResult
 
 import org.opensearch.action.search.SearchResponse
+import org.opensearch.action.search.CreatePitRequest
+import org.opensearch.action.search.CreatePitAction
 import org.opensearch.cluster.routing.Murmur3HashFunction
 import org.opensearch.common.settings.Settings
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentFactory.jsonBuilder
 import org.opensearch.common.util.io.IOUtils
 import org.opensearch.common.lucene.search.function.FunctionScoreQuery
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.index.IndexService
 import org.opensearch.index.query.QueryBuilders.functionScoreQuery
 import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder
@@ -44,11 +47,13 @@ import org.opensearch.index.query.functionscore.ScoreFunctionBuilders.fieldValue
 import org.opensearch.index.query.QueryBuilder
 import org.opensearch.plugins.Plugin
 import org.opensearch.search.builder.SearchSourceBuilder.searchSource
+import org.opensearch.search.builder.PointInTimeBuilder
 import org.opensearch.search.sort.SortOrder
 import org.opensearch.test.OpenSearchSingleNodeTestCase
 import org.opensearch.test.InternalSettingsPlugin
 import org.opensearch.test.hamcrest.OpenSearchAssertions.assertNoFailures
 import org.opensearch.transport.client.Requests.searchRequest
+import org.opensearch.transport.client.Requests.searchScrollRequest
 
 import org.hamcrest.MatcherAssert
 import org.hamcrest.Matchers.equalTo
@@ -136,7 +141,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
 
     private fun updateMap(
         envs: List<StraightHashMapEnv<*, StraightHashMap_Int_Float, StraightHashMapRO_Int_Float>>,
-        numShards: Int?,
+        numShards: Int? = null,
         entries: Map<Int, Float>
     ) {
         envs.map { it.openMap() }.use { maps ->
@@ -214,7 +219,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
 
     fun testRealTimeUpdates() {
         val indexName = "test"
-        val envs = initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+        val envs = initMap("ext_price", entries = mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
 
         val mapping = jsonBuilder().obj {
             obj("properties") {
@@ -249,7 +254,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
 
         assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
 
-        updateMap(envs, 1, mapOf(4 to 1.4F))
+        updateMap(envs, entries = mapOf(4 to 1.4F))
 
         assertHits(search(), listOf("4" to 1.4F, "3" to 1.3F, "2" to 1.2F, "1" to 1.1F))
 
@@ -258,25 +263,27 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         ).use { values ->
             assertThat(values.version, equalTo(0))
             // The first ref is held by the environment as a current map,
-            // the second one is stored as a thread local inside ExternalFileFieldData
-            // and the last one is held by the values variable
-            assertThat(values.refCount(), equalTo(3))
-
-            // Trigger rehashing
-            envs.forEach { env ->
-                env.openMap().use { map ->
-                    val newMap = env.newMap(map, 40)
-                    env.commit(newMap)
-                }
-            }
-            ExternalFileService.instance.getValues(
-                "ext_price", ExternalFieldKeyType.INT, 0
-            ).use { newValues ->
-                assertThat(newValues.version, equalTo(1))
-            }
-
-            ExternalFileService.instance.reset()
+            // the second one is held by the local `values` variable
             assertThat(values.refCount(), equalTo(2))
+        }
+
+        // Trigger rehashing
+        envs.forEach { env ->
+            env.openMap().use { map ->
+                val newMap = env.newMap(map, 40)
+                env.commit(newMap)
+            }
+        }
+        ExternalFileService.instance.getValues(
+            "ext_price", ExternalFieldKeyType.INT, 0
+        ).use { values ->
+            assertThat(values.version, equalTo(1))
+            assertThat(values.refCount(), equalTo(2))
+
+            // After clearing environments that were held by ExternalFileService
+            // the only reference is a local `values` variable
+            ExternalFileService.instance.reset()
+            assertThat(values.refCount(), equalTo(1))
         }
     }
 
@@ -321,7 +328,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         ExternalFileService.instance.getValues(
             "ext_price", ExternalFieldKeyType.INT, 0
         ).use { values ->
-            assertThat(values.refCount(), equalTo(3))
+            assertThat(values.refCount(), equalTo(2))
 
             // Trigger rehashing
             envs.forEach { env ->
@@ -330,7 +337,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                     env.commit(newMap)
                 }
             }
-            assertThat(values.refCount(), equalTo(3))
+            assertThat(values.refCount(), equalTo(2))
 
             // After processing a new search query the only reference is a
             // values local variable
@@ -339,6 +346,75 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         }
     }
 
+    fun testPointInTimeSearch() {
+        val indexName = "test"
+        val envs = initMap("ext_price", entries = mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                }
+            }
+        }
+        createIndex(indexName, mapping = mapping)
+
+        indexTestDocuments(indexName)
+
+        val createPitRequest = CreatePitRequest(TimeValue.timeValueSeconds(30), true)
+        createPitRequest.setIndices(arrayOf(indexName))
+        val pitResp = client().execute(CreatePitAction.INSTANCE, createPitRequest).get()
+        
+        val searchReq = searchRequest().source(
+            searchSource()
+                .query(
+                    functionScoreQuery(
+                        fieldValueFactorFunction("ext_price").missing(0.0)
+                    )
+                )
+                .sort("_score")
+                .sort("id", SortOrder.ASC)
+                .explain(false)
+                .pointInTimeBuilder(PointInTimeBuilder(pitResp.id))
+        )
+        client().search(searchReq).get().also { resp ->
+            assertNoFailures(resp)
+
+            assertHits(resp, listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+        }
+
+        ExternalFileService.instance.getValues(
+            "ext_price", ExternalFieldKeyType.INT, 0
+        ).use { values ->
+            assertThat(values.version, equalTo(0))
+            assertThat(values.refCount(), equalTo(2))
+        }
+
+        updateMap(envs, entries = mapOf(4 to 1.4F))
+
+        client().search(searchReq).get().also { resp ->
+            assertNoFailures(resp)
+
+            // Point in time should not hold external file snapshot
+            assertHits(resp, listOf("4" to 1.4F, "3" to 1.3F, "2" to 1.2F, "1" to 1.1F))
+        }
+
+        ExternalFileService.instance.getValues(
+            "ext_price", ExternalFieldKeyType.INT, 0
+        ).use { values ->
+            assertThat(values.version, equalTo(0))
+            assertThat(values.refCount(), equalTo(2))
+        }
+    }
+    
     fun testMultipleExternalFields() {
         val indexName = "test"
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
@@ -744,7 +820,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
     }
 
     private fun createIndex(
-        indexName: String, numShards: Int, mapping: XContentBuilder
+        indexName: String, numShards: Int = 1, mapping: XContentBuilder
     ): IndexService {
         val createIndexRequest = client().admin()
             .indices()

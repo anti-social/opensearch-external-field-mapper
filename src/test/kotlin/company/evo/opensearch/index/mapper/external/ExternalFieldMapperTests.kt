@@ -16,56 +16,50 @@
 
 package company.evo.opensearch.index.mapper.external
 
-import java.nio.file.Files
-
-import company.evo.opensearch.indices.ExternalFileService
 import company.evo.opensearch.indices.ExternalFieldKeyType
+import company.evo.opensearch.indices.ExternalFileService
 import company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin
 import dev.evo.persistent.BufferManagement
-import dev.evo.persistent.hashmap.straight.StraightHashMap_Int_Float
-import dev.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapEnv
+import dev.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
-import dev.evo.persistent.hashmap.straight.PutResult
-
-import org.opensearch.action.search.SearchResponse
-import org.opensearch.action.search.CreatePitRequest
+import dev.evo.persistent.hashmap.straight.StraightHashMap_Int_Float
+import org.hamcrest.Matcher
+import org.hamcrest.MatcherAssert
+import org.hamcrest.Matchers.closeTo
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.hasSize
+import org.hamcrest.Matchers.isA
+import org.junit.After
+import org.junit.Assert
 import org.opensearch.action.search.CreatePitAction
+import org.opensearch.action.search.CreatePitRequest
+import org.opensearch.action.search.SearchResponse
 import org.opensearch.cluster.routing.Murmur3HashFunction
-import org.opensearch.common.settings.Settings
-import org.opensearch.core.xcontent.XContentBuilder
-import org.opensearch.common.xcontent.XContentFactory.jsonBuilder
-import org.opensearch.common.util.io.IOUtils
 import org.opensearch.common.lucene.search.function.FunctionScoreQuery
+import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
+import org.opensearch.common.util.io.IOUtils
+import org.opensearch.common.xcontent.XContentFactory.jsonBuilder
+import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.index.IndexService
+import org.opensearch.index.query.QueryBuilder
 import org.opensearch.index.query.QueryBuilders.functionScoreQuery
 import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder
 import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder
 import org.opensearch.index.query.functionscore.ScoreFunctionBuilders.fieldValueFactorFunction
-import org.opensearch.index.query.QueryBuilder
 import org.opensearch.plugins.Plugin
-import org.opensearch.search.builder.SearchSourceBuilder.searchSource
 import org.opensearch.search.builder.PointInTimeBuilder
+import org.opensearch.search.builder.SearchSourceBuilder.searchSource
 import org.opensearch.search.sort.SortOrder
-import org.opensearch.test.OpenSearchSingleNodeTestCase
 import org.opensearch.test.InternalSettingsPlugin
+import org.opensearch.test.OpenSearchSingleNodeTestCase
 import org.opensearch.test.hamcrest.OpenSearchAssertions.assertNoFailures
 import org.opensearch.transport.client.Requests.searchRequest
-import org.opensearch.transport.client.Requests.searchScrollRequest
+import java.nio.file.Files
 
-import org.hamcrest.MatcherAssert
-import org.hamcrest.Matchers.equalTo
-import org.hamcrest.Matchers.closeTo
-import org.hamcrest.Matchers.hasSize
-import org.hamcrest.Matchers.isA
-import org.hamcrest.Matcher
-
-import org.junit.After
-import org.junit.Assert
-
-inline fun <T: AutoCloseable?, R> List<T>.use(block: (List<T>) -> R): R {
+inline fun <T : AutoCloseable?, R> List<T>.use(block: (List<T>) -> R): R {
     var exception: Throwable? = null
     try {
         return block(this)
@@ -79,6 +73,7 @@ inline fun <T: AutoCloseable?, R> List<T>.use(block: (List<T>) -> R): R {
                 exception == null -> {
                     v.close()
                 }
+
                 else -> {
                     try {
                         v.close()
@@ -145,7 +140,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         entries: Map<Int, Float>
     ) {
         envs.map { it.openMap() }.use { maps ->
-            entries.forEach { (k , v) ->
+            entries.forEach { (k, v) ->
                 val shardId = Math.floorMod(Murmur3HashFunction.hash(k.toString()), numShards ?: 1)
                 val map = maps[shardId]
                 map.put(k, v)
@@ -169,7 +164,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         if (entries != null) {
             envs.use { mapEnvs ->
                 mapEnvs.map { it.openMap() }.use { maps ->
-                    entries.forEach { (k , v) ->
+                    entries.forEach { (k, v) ->
                         val shardId = Math.floorMod(Murmur3HashFunction.hash(k.toString()), numShards ?: 1)
                         val map = maps[shardId]
                         map.put(k, v)
@@ -320,7 +315,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                 ),
             )
         )
-            .scoreMode(FunctionScoreQuery.ScoreMode.SUM) 
+            .scoreMode(FunctionScoreQuery.ScoreMode.SUM)
         assertHits(
             search(query),
             listOf("3" to 2.6F, "2" to 2.4F, "1" to 2.2F, "4" to 0F)
@@ -372,7 +367,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
         val createPitRequest = CreatePitRequest(TimeValue.timeValueSeconds(30), true)
         createPitRequest.setIndices(arrayOf(indexName))
         val pitResp = client().execute(CreatePitAction.INSTANCE, createPitRequest).get()
-        
+
         val searchReq = searchRequest().source(
             searchSource()
                 .query(
@@ -414,7 +409,50 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
             assertThat(values.refCount(), equalTo(2))
         }
     }
-    
+
+    fun testRefreshCurrentVersionsReleasesStaleGenerations() {
+        val indexName = "test"
+        val envs = initMap("ext_price", entries = mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
+
+        val mapping = jsonBuilder().obj {
+            obj("properties") {
+                obj("id") {
+                    field("type", "integer")
+                }
+                obj("name") {
+                    field("type", "text")
+                }
+                obj("ext_price") {
+                    field("type", "external_file")
+                    field("key_field", "id")
+                    field("map_name", "ext_price")
+                }
+            }
+        }
+        createIndex(indexName, mapping = mapping)
+        indexTestDocuments(indexName)
+
+        assertHits(search(), listOf("3" to 1.3F, "2" to 1.2F, "1" to 1.1F, "4" to 0.0F))
+
+        ExternalFileService.instance.getValues(
+            "ext_price", ExternalFieldKeyType.INT, null
+        ).use { v0 ->
+            assertThat(v0.version, equalTo(0))
+            assertThat(v0.refCount(), equalTo(2))
+
+            envs.forEach { env ->
+                env.openMap().use { map ->
+                    val newMap = env.newMap(map, 40)
+                    env.commit(newMap)
+                }
+            }
+            assertThat(v0.refCount(), equalTo(2))
+
+            ExternalFileService.instance.refreshCurrentVersions()
+            assertThat(v0.refCount(), equalTo(1))
+        }
+    }
+
     fun testMultipleExternalFields() {
         val indexName = "test"
         initMap("ext_price", null, mapOf(1 to 1.1F, 2 to 1.2F, 3 to 1.3F))
@@ -668,7 +706,12 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
 
         assertHitsWithSort(
             searchWithSort(),
-            listOf("3" to arrayOf(1.3), "2" to arrayOf(1.2), "1" to arrayOf(1.1), "4" to arrayOf(Double.NEGATIVE_INFINITY))
+            listOf(
+                "3" to arrayOf(1.3),
+                "2" to arrayOf(1.2),
+                "1" to arrayOf(1.1),
+                "4" to arrayOf(Double.NEGATIVE_INFINITY)
+            )
         )
     }
 
@@ -920,7 +963,7 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
     }
 
     private fun search(query: QueryBuilder? = null): SearchResponse {
-        val query = if (query == null ) {
+        val query = if (query == null) {
             functionScoreQuery(
                 fieldValueFactorFunction("ext_price").missing(0.0)
             )
@@ -956,7 +999,9 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                 .source(
                     searchSource()
                         .sort("ext_price", SortOrder.DESC)
-                        .explain(false)))
+                        .explain(false)
+                )
+        )
             .actionGet()
             .also(::assertNoFailures)
     }
@@ -968,7 +1013,9 @@ class ExternalFieldMapperTests : OpenSearchSingleNodeTestCase() {
                     searchSource()
                         .sort("ext_price", SortOrder.DESC)
                         .docValueField("ext_price")
-                        .explain(false)))
+                        .explain(false)
+                )
+        )
             .actionGet()
             .also(::assertNoFailures)
     }

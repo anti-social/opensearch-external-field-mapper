@@ -16,21 +16,22 @@
 
 package company.evo.opensearch.indices
 
-import dev.evo.rc.RefCounted
 import dev.evo.rc.AtomicRefCounted
-
+import dev.evo.rc.RefCounted
 import org.apache.logging.log4j.LogManager
-
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.env.Environment
 import org.opensearch.env.NodeEnvironment
-
+import org.opensearch.threadpool.Scheduler
+import org.opensearch.threadpool.ThreadPool
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 class ExternalFileService internal constructor(
-    nodeEnv: NodeEnvironment
+    nodeEnv: NodeEnvironment,
+    private val threadPool: ThreadPool,
 ) : AbstractLifecycleComponent() {
 
     private val logger = LogManager.getLogger(this::javaClass)
@@ -40,8 +41,12 @@ class ExternalFileService internal constructor(
         )
     private val mapFileProviders = ConcurrentHashMap<String, RefCounted<ExternalFileValues.Provider>>()
 
+    @Volatile
+    private var refreshTask: Scheduler.Cancellable? = null
+
     companion object {
         const val EXTERNAL_DIR_NAME = "external_files"
+        const val REFRESH_INTERVAL_SECONDS = 30L
 
         private var lateInstance = AtomicReference<ExternalFileService>()
         val instance: ExternalFileService
@@ -57,11 +62,22 @@ class ExternalFileService internal constructor(
         }
     }
 
-    override fun doStart() {}
+    override fun doStart() {
+        refreshTask = threadPool.scheduleWithFixedDelay(
+            { refreshCurrentVersions() },
+            TimeValue.timeValueSeconds(REFRESH_INTERVAL_SECONDS),
+            ThreadPool.Names.GENERIC,
+        )
+    }
 
-    override fun doStop() {}
+    override fun doStop() {
+        refreshTask?.cancel()
+        refreshTask = null
+    }
 
     override fun doClose() {
+        refreshTask?.cancel()
+        refreshTask = null
         reset()
     }
 
@@ -99,6 +115,19 @@ class ExternalFileService internal constructor(
                 ) { it.close() }
             } else {
                 v
+            }
+        }
+    }
+
+    fun refreshCurrentVersions() {
+        mapFileProviders.forEach { (mapName, refCounted) ->
+            val provider = refCounted.retainAndGet() ?: return@forEach
+            try {
+                provider.refreshCurrentVersions()
+            } catch (e: Throwable) {
+                logger.warn("Failed to refresh current versions for map=$mapName", e)
+            } finally {
+                refCounted.release()
             }
         }
     }

@@ -16,6 +16,8 @@
 
 package company.evo.opensearch.indices
 
+import dev.evo.rc.AtomicRefCounted
+import dev.evo.rc.RefCounted
 import org.apache.logging.log4j.LogManager
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.unit.TimeValue
@@ -37,7 +39,7 @@ class ExternalFileService internal constructor(
         ?: throw IllegalStateException(
             "${Environment.PATH_SHARED_DATA_SETTING} setting must be specified"
         )
-    private val mapFileProviders = ConcurrentHashMap<String, ExternalFileValues.Provider>()
+    private val mapFileProviders = ConcurrentHashMap<String, RefCounted<ExternalFileValues.Provider>>()
 
     @Volatile
     private var refreshTask: Scheduler.Cancellable? = null
@@ -80,12 +82,8 @@ class ExternalFileService internal constructor(
     }
 
     fun reset() {
-        mapFileProviders.values.forEach { provider ->
-            try {
-                provider.close()
-            } catch (e: Throwable) {
-                logger.warn("Failed to close external file provider", e)
-            }
+        mapFileProviders.forEach { (_, valuesProvider) ->
+            valuesProvider.release()
         }
         mapFileProviders.clear()
     }
@@ -100,46 +98,53 @@ class ExternalFileService internal constructor(
     ) {
         val extDir = getExternalFileDir(mapName)
 
-        // compute() executes atomically per key
-        mapFileProviders.compute(mapName) { _, existing ->
-            if (existing == null) {
-                logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, sharding=$sharding, numShards=$numShards}")
-                ExternalFileValues.Provider(extDir, sharding, numShards, useMemorySegments)
-            } else if (
-                existing.dir != extDir ||
-                existing.sharding != sharding ||
-                existing.numShards != numShards ||
-                existing.useMemorySegments != useMemorySegments
+        // We don't need synchronization as compute function invocation performs atomically
+        mapFileProviders.compute(mapName) { _, v ->
+            val curProvider = v?.get()
+            if (
+                curProvider == null ||
+                curProvider.dir != extDir ||
+                curProvider.sharding != sharding ||
+                curProvider.numShards != numShards ||
+                curProvider.useMemorySegments != useMemorySegments
             ) {
-                logger.warn(
-                    "Conflicting external_file parameters for map=$mapName " +
-                        "(index=$indexName, field=$fieldName): " +
-                        "existing dir=${existing.dir} sharding=${existing.sharding} " +
-                        "numShards=${existing.numShards} useMemorySegments=${existing.useMemorySegments}, " +
-                        "incoming dir=$extDir sharding=$sharding " +
-                        "numShards=$numShards useMemorySegments=$useMemorySegments. " +
-                        "Keeping the existing provider."
-                )
-                existing
+                logger.info("Adding external file field: {index=$indexName, field=$fieldName, path=$extDir, sharding=$sharding, numShards=$numShards}")
+                v?.release()
+                AtomicRefCounted(
+                    ExternalFileValues.Provider(extDir, sharding, numShards, useMemorySegments)
+                ) { it.close() }
             } else {
-                existing
+                v
             }
         }
     }
 
     fun refreshCurrentVersions() {
-        mapFileProviders.forEach { (mapName, provider) ->
+        mapFileProviders.forEach { (mapName, refCounted) ->
+            val provider = refCounted.retainAndGet() ?: return@forEach
             try {
                 provider.refreshCurrentVersions()
             } catch (e: Throwable) {
                 logger.warn("Failed to refresh current versions for map=$mapName", e)
+            } finally {
+                refCounted.release()
             }
         }
     }
 
     fun getValues(mapName: String, keyType: ExternalFieldKeyType, shardId: Int?): ExternalFileValues {
-        val provider = mapFileProviders[mapName] ?: return EmptyFileValues
-        return provider.getValues(keyType, shardId)
+        repeat(100) {
+            val v = mapFileProviders[mapName] ?: return EmptyFileValues
+            val valuesProvider = v.retainAndGet()
+            if (valuesProvider != null) {
+                try {
+                    return valuesProvider.getValues(keyType, shardId)
+                } finally {
+                    v.release()
+                }
+            }
+        }
+        throw IllegalStateException("Cannot get values for map: ${mapName}")
     }
 
     fun getExternalFileDir(name: String): Path {

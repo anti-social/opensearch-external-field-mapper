@@ -76,8 +76,7 @@ class ExternalFileService internal constructor(
     }
 
     override fun doClose() {
-        refreshTask?.cancel()
-        refreshTask = null
+        doStop()
         reset()
     }
 

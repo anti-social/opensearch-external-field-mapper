@@ -16,30 +16,27 @@
 
 package company.evo.opensearch.plugin.mapper
 
-import java.util.Collections
-
 import company.evo.opensearch.index.mapper.external.ExternalFileFieldMapper
 import company.evo.opensearch.indices.ExternalFileService
-
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
+import org.opensearch.common.lease.Releasable
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.env.Environment
 import org.opensearch.env.NodeEnvironment
-import org.opensearch.index.mapper.Mapper
 import org.opensearch.index.IndexModule
+import org.opensearch.index.mapper.Mapper
 import org.opensearch.index.shard.SearchOperationListener
 import org.opensearch.plugins.MapperPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.repositories.RepositoriesService
 import org.opensearch.script.ScriptService
+import org.opensearch.search.internal.SearchContext
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.client.Client
 import org.opensearch.watcher.ResourceWatcherService
-import org.opensearch.search.internal.SearchContext
-import org.opensearch.common.lease.Releasable
-
+import java.util.*
 import java.util.function.Supplier
 
 class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
@@ -65,13 +62,7 @@ class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
                 }
 
                 override fun onPreFetchPhase(searchContext: SearchContext) {
-                    searchContext.addReleasable(
-                        object : Releasable {
-                            override fun close() {
-                                ExternalFileFieldMapper.ExternalFileFieldData.releaseValues()
-                            }
-                        }
-                    )
+                    searchContext.addReleasable { ExternalFileFieldMapper.ExternalFileFieldData.releaseValues() }
                 }
             }
         )
@@ -90,8 +81,6 @@ class ExternalFileMapperPlugin : Plugin(), MapperPlugin {
         indexNameExpressionResolver: IndexNameExpressionResolver,
         repositoriesServiceSupplier: Supplier<RepositoriesService>
     ): MutableCollection<Any> {
-        return mutableListOf(
-            ExternalFileService(nodeEnvironment)
-        )
+        return mutableListOf(ExternalFileService(nodeEnvironment, threadPool))
     }
 }

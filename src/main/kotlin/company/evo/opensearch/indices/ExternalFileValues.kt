@@ -8,9 +8,7 @@ import dev.evo.persistent.hashmap.straight.StraightHashMapRO_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapRO_Long_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Int_Float
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
-
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 enum class ExternalFieldKeyType {
@@ -38,7 +36,7 @@ interface ExternalFileValues : AutoCloseable {
                     } else {
                         dir
                     }
-                    val mapEnvBuilder = when(keyType) {
+                    val mapEnvBuilder = when (keyType) {
                         ExternalFieldKeyType.INT -> StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
                         ExternalFieldKeyType.LONG -> StraightHashMapEnv.Builder(StraightHashMapType_Long_Float)
                     }
@@ -55,16 +53,17 @@ interface ExternalFileValues : AutoCloseable {
                         newEnv.close()
                     }
                     env = mapEnv.get()!!
-                } catch (e: FileDoesNotExistException) {
+                } catch (_: FileDoesNotExistException) {
                     return EmptyFileValues
                 }
             }
-            return when(keyType) {
+            return when (keyType) {
                 ExternalFieldKeyType.INT -> {
                     IntFloatFileValues(
                         env.getCurrentMap() as StraightHashMapRO_Int_Float
                     )
                 }
+
                 ExternalFieldKeyType.LONG -> {
                     LongFloatFileValues(
                         env.getCurrentMap() as StraightHashMapRO_Long_Float
@@ -76,6 +75,13 @@ interface ExternalFileValues : AutoCloseable {
         override fun close() {
             mapEnvs.forEach { env ->
                 env.get()?.close()
+            }
+        }
+
+        fun refreshCurrentVersions() {
+            mapEnvs.forEach { envRef ->
+                val env = envRef.get() ?: return@forEach
+                env.getCurrentMap().close()
             }
         }
     }

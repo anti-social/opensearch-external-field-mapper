@@ -76,7 +76,6 @@ class ExternalFileService internal constructor(
     }
 
     override fun doClose() {
-        doStop()
         reset()
     }
 

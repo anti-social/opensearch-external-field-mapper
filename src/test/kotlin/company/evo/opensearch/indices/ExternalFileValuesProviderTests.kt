@@ -92,6 +92,38 @@ class ExternalFileValuesProviderTests : OpenSearchSingleNodeTestCase() {
         env.close()
     }
 
+    /**
+     * Nothing fails when a recreated directory has a map file of the same
+     * version: an environment keeps answering from the removed file and only
+     * the identity of the version file gives the replacement away.
+     */
+    fun testRefreshDropsEnvironmentWhenVersionFileIsReplaced() {
+        val dir = createTempDir()
+        val mapDir = dir.resolve("0")
+
+        var env = openWritableEnv(mapDir)
+        var map = env.openMap()
+        map.put(1L, 1.1F)
+
+        val provider = ExternalFileValues.Provider(dir, true, 1, true)
+        assertEquals(1.1, getValue(provider, 1L), 1e-6)
+
+        map.close()
+        env.close()
+        IOUtils.rm(mapDir)
+        env = openWritableEnv(mapDir)
+        map = env.openMap()
+        map.put(1L, 3.3F)
+
+        provider.refreshCurrentVersions()
+
+        assertEquals(3.3, getValue(provider, 1L), 1e-6)
+
+        provider.close()
+        map.close()
+        env.close()
+    }
+
     fun testReturnsDefaultsWhenDirectoryDoesNotExist() {
         val dir = createTempDir()
         val provider = ExternalFileValues.Provider(dir, true, 1, true)

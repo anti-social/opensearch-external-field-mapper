@@ -80,10 +80,10 @@ interface ExternalFileValues : AutoCloseable {
             }
         }
 
-        private fun readVersionFileKey(shardId: Int?): Any? {
+        private fun readVersionFileKey(mapDir: Path): Any? {
             return try {
                 Files.readAttributes(
-                    mapDir(shardId).resolve(StraightHashMapEnv.VERSION_FILENAME),
+                    mapDir.resolve(StraightHashMapEnv.VERSION_FILENAME),
                     BasicFileAttributes::class.java
                 ).fileKey()
             } catch (_: IOException) {
@@ -97,7 +97,7 @@ interface ExternalFileValues : AutoCloseable {
             shardId: Int?,
         ): StraightHashMapROEnv<*, *, *>? {
             val mapDir = mapDir(shardId)
-            val versionFileKey = readVersionFileKey(shardId)
+            val versionFileKey = readVersionFileKey(mapDir)
             val mapEnvBuilder = when (keyType) {
                 ExternalFieldKeyType.INT -> StraightHashMapEnv.Builder(StraightHashMapType_Int_Float)
                 ExternalFieldKeyType.LONG -> StraightHashMapEnv.Builder(StraightHashMapType_Long_Float)
@@ -125,13 +125,13 @@ interface ExternalFileValues : AutoCloseable {
 
         fun refreshCurrentVersions() {
             mapEnvs.forEachIndexed { ix, envRef ->
-                val shardId = if (sharding) ix else null
                 val env = envRef.get() ?: return@forEachIndexed
+                val mapDir = mapDir(if (sharding) ix else null)
 
-                val versionFileKey = readVersionFileKey(shardId)
+                val versionFileKey = readVersionFileKey(mapDir)
                 if (versionFileKey != null && versionFileKey != versionFileKeys[ix].get()) {
                     logger.warn(
-                        "Version file of ${mapDir(shardId)} has been replaced, " +
+                        "Version file of $mapDir has been replaced, " +
                             "dropping the environment mapped to the old one"
                     )
                     envRef.compareAndSet(env, null)
@@ -142,8 +142,7 @@ interface ExternalFileValues : AutoCloseable {
                     env.getCurrentMap().close()
                 } catch (e: FileDoesNotExistException) {
                     logger.warn(
-                        "Cannot get a current map from ${mapDir(shardId)}, " +
-                            "dropping the environment", e
+                        "Cannot get a current map from $mapDir, dropping the environment", e
                     )
                     envRef.compareAndSet(env, null)
                 }

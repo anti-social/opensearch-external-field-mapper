@@ -77,6 +77,7 @@ class ExternalFileService internal constructor(
 
     override fun doClose() {
         reset()
+        lateInstance.compareAndSet(this, null)
     }
 
     fun reset() {

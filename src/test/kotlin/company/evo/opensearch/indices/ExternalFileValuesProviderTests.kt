@@ -1,24 +1,17 @@
 package company.evo.opensearch.indices
 
-import company.evo.opensearch.plugin.mapper.ExternalFileMapperPlugin
-
 import dev.evo.persistent.BufferManagement
 import dev.evo.persistent.hashmap.straight.StraightHashMapEnv
 import dev.evo.persistent.hashmap.straight.StraightHashMapType_Long_Float
 
 import org.opensearch.common.util.io.IOUtils
-import org.opensearch.plugins.Plugin
-import org.opensearch.test.OpenSearchSingleNodeTestCase
+import org.opensearch.test.OpenSearchTestCase
 
 import java.nio.file.Files
 import java.nio.file.Path
 
-class ExternalFileValuesProviderTests : OpenSearchSingleNodeTestCase() {
 
-
-    override fun getPlugins(): Collection<Class<out Plugin>> {
-        return pluginList(ExternalFileMapperPlugin::class.java)
-    }
+class ExternalFileValuesProviderTests : OpenSearchTestCase() {
 
     private fun openWritableEnv(mapDir: Path) = StraightHashMapEnv
         .Builder(StraightHashMapType_Long_Float)
